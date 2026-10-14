@@ -15,7 +15,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         menu.delegate = self
         statusItem.menu = menu
 
-        _ = Navigator.start()
+        Navigator.start()
         gestures.onSwipe = { [weak self] in self?.handle($0) }
         gestures.start(fingers: settings.fingers)
 
@@ -35,7 +35,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private func handle(_ swipe: SwipeDirection) {
         // While macOS owns these swipes too, acting on them would switch Spaces twice.
         guard SystemGestures.conflicts(fingers: settings.fingers).isEmpty else { return }
-        guard let layout = Spaces.layout(), let current = layout.current else { return }
+        guard let layout = Spaces.layout(), let current = Navigator.current(in: layout) else { return }
         let grid = layout.grid(columns: settings.columns)
         guard let target = grid.target(from: current, swipe: swipe, invertVertical: settings.invertVertical) else {
             if settings.showOverlay { overlay.show(layout, columns: settings.columns) }

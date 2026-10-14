@@ -24,6 +24,7 @@ enum Doctor {
     static func run(settings: Settings, deviceCount: Int) -> [CheckResult] {
         [
             accessibility(),
+            eventTap(),
             trackpad(deviceCount: deviceCount),
             systemGestures(fingers: settings.fingers),
             rearrangeSpaces(),
@@ -44,6 +45,17 @@ enum Doctor {
                 AXIsProcessTrustedWithOptions([prompt: true] as CFDictionary)
                 SystemPrefs.open("x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility")
             }]
+        )
+    }
+
+    private static func eventTap() -> CheckResult {
+        if Navigator.start() {
+            return CheckResult(id: "tap", title: "Input Monitoring", status: .ok, detail: "Gridspace can watch the swipes it posts.")
+        }
+        return CheckResult(
+            id: "tap", title: "Input Monitoring", status: .failing,
+            detail: "Gridspace couldn't install its event tap, so it can't switch Spaces. Turn Gridspace on under Privacy & Security > Input Monitoring (and Accessibility), then recheck.",
+            fixes: [Fix(title: "Open Input Monitoring") { SystemPrefs.open("x-apple.systempreferences:com.apple.preference.security?Privacy_ListenEvent") }]
         )
     }
 
