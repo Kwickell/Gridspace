@@ -27,7 +27,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         workspace.addObserver(self, selector: #selector(restartGestures), name: NSWorkspace.didWakeNotification, object: nil)
 
         arrangeHotkey = Hotkey.arrange { [weak self] in self?.showArrange() }
-        if let layout = Spaces.layout() { SpaceOrder.sync(layout) }
+        syncOrder()
+        // Spaces can open or close without the active Space changing, e.g. closing one from Mission Control.
+        Timer.scheduledTimer(withTimeInterval: 2, repeats: true) { [weak self] _ in self?.syncOrder() }
         updateIcon()
         if checks().contains(where: { $0.status == .failing }) { showDoctor() }
     }
@@ -48,6 +50,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         if !Navigator.go(to: target, in: layout) {
             NSSound.beep()
         }
+    }
+
+    private func syncOrder() {
+        guard let layout = Spaces.layout() else { return }
+        SpaceOrder.sync(layout)
     }
 
     @objc private func spaceChanged() {

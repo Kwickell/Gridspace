@@ -13,6 +13,7 @@ final class ArrangeModel: ObservableObject {
     @Published var tiles: [Tile] = []
     @Published var columns: Int
     @Published var dragging: Tile?
+    private var displayID = ""
 
     init(columns: Int) {
         self.columns = columns
@@ -20,7 +21,9 @@ final class ArrangeModel: ObservableObject {
     }
 
     func reload() {
+        dragging = nil
         guard let layout = Spaces.layout() else { tiles = []; return }
+        displayID = layout.displayID
         tiles = layout.items.enumerated().map { index, item in
             Tile(id: item.key, name: item.name, icon: item.icon, isCurrent: index == layout.current)
         }
@@ -32,12 +35,12 @@ final class ArrangeModel: ObservableObject {
     }
 
     func save() {
-        SpaceOrder.saved = tiles.map(\.id)
+        SpaceOrder.save(tiles.map(\.id), for: displayID)
     }
 
     func resetToMissionControl() {
         guard let layout = Spaces.layout(order: []) else { return }
-        SpaceOrder.saved = layout.items.map(\.key)
+        SpaceOrder.save(layout.items.map(\.key), for: layout.displayID)
         reload()
     }
 }
@@ -68,6 +71,11 @@ struct ArrangeView: View {
         }
         .padding(20)
         .fixedSize()
+        // A drag released anywhere but on a tile still ends the drag.
+        .onDrop(of: [.text], isTargeted: nil) { _ in
+            model.dragging = nil
+            return false
+        }
     }
 
     private func tileView(_ tile: ArrangeModel.Tile) -> some View {
@@ -99,6 +107,8 @@ private struct TileDrop: DropDelegate {
         model.save()
         onChange()
     }
+
+    func validateDrop(info: DropInfo) -> Bool { model.dragging != nil }
 
     func dropUpdated(info: DropInfo) -> DropProposal? { DropProposal(operation: .move) }
 

@@ -17,7 +17,7 @@ struct SpaceItem {
     }
 
     let id: UInt64
-    /// Survives logins and app relaunches: the desktop's uuid, or the app's bundle id.
+    /// The Space's uuid, which macOS keeps for as long as the Space exists (desktops survive logins).
     let key: String
     let kind: Kind
     let name: String
@@ -49,7 +49,8 @@ enum Spaces {
     private static let desktopType = 0
     private static let fullscreenType = 4
 
-    static func layout(order: [String] = SpaceOrder.saved) -> SpaceLayout? {
+    /// Pass `order: []` for Mission Control order.
+    static func layout(order: [String]? = nil) -> SpaceLayout? {
         let connection = CGSMainConnectionID()
         let active = CGSGetActiveSpace(connection)
         guard let displays = CGSCopyManagedDisplaySpaces(connection) as? [[String: Any]] else { return nil }
@@ -58,30 +59,31 @@ enum Spaces {
             let spaces = display["Spaces"] as? [[String: Any]] ?? []
             guard spaces.compactMap(spaceID).contains(active) else { continue }
 
+            let displayID = display["Display Identifier"] as? String ?? ""
             var desktopNumber = 0
-            var appCopies: [String: Int] = [:]
             let found: [SpaceItem] = spaces.compactMap { space in
                 guard let id = spaceID(space) else { return nil }
+                // The first desktop has an empty uuid; its id stays put instead.
+                let uuid = space["uuid"] as? String ?? ""
+                let key = uuid.isEmpty ? "\(displayID)/\(id)" : uuid
                 switch space["type"] as? Int {
                 case desktopType:
                     desktopNumber += 1
-                    return SpaceItem(id: id, key: "desktop:\(space["uuid"] as? String ?? "")", kind: .desktop(number: desktopNumber), name: "Desktop \(desktopNumber)")
+                    return SpaceItem(id: id, key: key, kind: .desktop(number: desktopNumber), name: "Desktop \(desktopNumber)")
                 case fullscreenType:
-                    guard let app = appInfo(space) else { return nil }
-                    let copy = appCopies[app.bundle, default: 0]
-                    appCopies[app.bundle] = copy + 1
-                    return SpaceItem(id: id, key: "app:\(app.bundle)#\(copy)", kind: .app(pid: app.pid), name: app.name)
+                    let app = appInfo(space)
+                    return SpaceItem(id: id, key: key, kind: .app(pid: app?.pid ?? 0), name: app?.name ?? "App")
                 default:
                     return nil
                 }
             }
-            let items = ordered(found, key: \.key, saved: order)
+            let items = ordered(found, key: \.key, saved: order ?? SpaceOrder.saved(for: displayID))
             return SpaceLayout(
                 items: items,
                 current: items.firstIndex { $0.id == active },
                 missionControlOrder: spaces.compactMap(spaceID),
                 activeID: active,
-                displayID: display["Display Identifier"] as? String ?? ""
+                displayID: displayID
             )
         }
         return nil
@@ -92,31 +94,34 @@ enum Spaces {
         space["id64"] as? UInt64
     }
 
-    private static func appInfo(_ space: [String: Any]) -> (pid: pid_t, bundle: String, name: String)? {
+    private static func appInfo(_ space: [String: Any]) -> (pid: pid_t, name: String)? {
         let tiles = (space["TileLayoutManager"] as? [String: Any])?["TileSpaces"] as? [[String: Any]]
         guard let pid = (space["pid"] as? Int32) ?? (tiles?.first?["pid"] as? Int32) else { return nil }
-        let app = NSRunningApplication(processIdentifier: pid)
-        let name = app?.localizedName ?? tiles?.first?["appName"] as? String ?? "App"
-        return (pid, app?.bundleIdentifier ?? name, name)
+        let name = NSRunningApplication(processIdentifier: pid)?.localizedName ?? tiles?.first?["appName"] as? String ?? "App"
+        return (pid, name)
     }
 }
 
-/// Gridspace's own order of Spaces, by key. Spaces it hasn't seen go last.
+/// Gridspace's own order of Spaces per display, by key. Spaces it hasn't seen go last.
 enum SpaceOrder {
-    private static let defaultsKey = "spaceOrder"
+    private static let defaultsKey = "spaceOrderByDisplay"
 
-    static var saved: [String] {
-        get { UserDefaults.standard.stringArray(forKey: defaultsKey) ?? [] }
+    private static var all: [String: [String]] {
+        get { UserDefaults.standard.dictionary(forKey: defaultsKey) as? [String: [String]] ?? [:] }
         set { UserDefaults.standard.set(newValue, forKey: defaultsKey) }
+    }
+
+    static func saved(for displayID: String) -> [String] {
+        all[displayID] ?? []
+    }
+
+    static func save(_ keys: [String], for displayID: String) {
+        all[displayID] = keys
     }
 
     /// Records the current order, so a new Space stays last wherever macOS put it and a closed one drops out.
     static func sync(_ layout: SpaceLayout) {
         let keys = layout.items.map(\.key)
-        if keys != saved { saved = keys }
-    }
-
-    static func reset() {
-        UserDefaults.standard.removeObject(forKey: defaultsKey)
+        if keys != saved(for: layout.displayID) { save(keys, for: layout.displayID) }
     }
 }
