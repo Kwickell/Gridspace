@@ -30,8 +30,9 @@ enum Doctor {
             systemGestures(fingers: settings.fingers),
             reduceMotion(),
             rearrangeSpaces(),
-            desktopCount(cells: settings.grid.cells),
-            shortcuts(cells: settings.grid.cells),
+            desktopCount(),
+            shortcuts(),
+            switchOnActivate(),
             displays(),
         ]
     }
@@ -142,39 +143,63 @@ enum Doctor {
         )
     }
 
-    private static func desktopCount(cells: Int) -> CheckResult {
+    private static func desktopCount() -> CheckResult {
         guard let layout = Spaces.layout() else {
-            return CheckResult(id: "desktops", title: "Desktops", status: .failing, detail: "Could not read the desktop list.")
+            return CheckResult(id: "desktops", title: "Spaces", status: .failing, detail: "Could not read the Space list.")
         }
-        let have = layout.desktopIDs.count
-        if have >= cells {
-            let extra = have > cells ? " Desktops past \(cells) are outside the grid and can't be reached by swiping." : ""
-            return CheckResult(id: "desktops", title: "Desktops", status: have > cells ? .warning : .ok, detail: "\(have) desktops for a \(cells)-cell grid.\(extra)")
+        let desktops = layout.desktopIDs.count, apps = layout.apps.count
+        let summary = "\(desktops) desktop\(desktops == 1 ? "" : "s") and \(apps) fullscreen app\(apps == 1 ? "" : "s")."
+        if desktops > DesktopShortcuts.maxDesktops {
+            return CheckResult(id: "desktops", title: "Spaces", status: .warning, detail: "\(summary) Desktops past \(DesktopShortcuts.maxDesktops) have no shortcut, so swipes can't reach them.")
         }
-        return CheckResult(
-            id: "desktops", title: "Desktops", status: .failing,
-            detail: "\(have) desktops, the grid needs \(cells). Open Mission Control and add \(cells - have) with the + at the top right.",
-            fixes: [Fix(title: "Open Mission Control") {
-                NSWorkspace.shared.open(URL(fileURLWithPath: "/System/Applications/Mission Control.app"))
-            }]
-        )
+        if desktops + apps < 2 {
+            return CheckResult(
+                id: "desktops", title: "Spaces", status: .warning,
+                detail: "\(summary) Add desktops in Mission Control with the + at the top right.",
+                fixes: [Fix(title: "Open Mission Control") {
+                    NSWorkspace.shared.open(URL(fileURLWithPath: "/System/Applications/Mission Control.app"))
+                }]
+            )
+        }
+        return CheckResult(id: "desktops", title: "Spaces", status: .ok, detail: summary)
     }
 
-    private static func shortcuts(cells: Int) -> CheckResult {
-        if cells > DesktopShortcuts.maxDesktops {
-            return CheckResult(id: "shortcuts", title: "Desktop shortcuts", status: .failing, detail: "Grids above \(DesktopShortcuts.maxDesktops) cells aren't supported.")
+    private static func shortcuts() -> CheckResult {
+        let desktops = min(Spaces.layout()?.desktopIDs.count ?? 0, DesktopShortcuts.maxDesktops)
+        let missing = DesktopShortcuts.missing(upTo: desktops)
+        let steps = [DesktopShortcuts.Step.left, .right].filter { DesktopShortcuts.binding(step: $0) == nil }
+        if !steps.isEmpty {
+            return CheckResult(
+                id: "shortcuts", title: "Desktop shortcuts", status: .failing,
+                detail: "\"Move left/right a space\" \(steps.count == 1 ? "is" : "are") off. Gridspace uses them when a fullscreen app opens on the wrong Space.",
+                fixes: [Fix(title: "Open Keyboard settings") { SystemPrefs.open("x-apple.systempreferences:com.apple.Keyboard-Settings.extension") }]
+            )
         }
-        let missing = DesktopShortcuts.missing(upTo: cells)
         if missing.isEmpty {
-            return CheckResult(id: "shortcuts", title: "Desktop shortcuts", status: .ok, detail: "\"Switch to Desktop 1-\(cells)\" are on.")
+            return CheckResult(id: "shortcuts", title: "Desktop shortcuts", status: .ok, detail: desktops > 1 ? "\"Switch to Desktop 1-\(desktops)\" are on." : "\"Switch to Desktop 1\" is on.")
         }
         return CheckResult(
             id: "shortcuts", title: "Desktop shortcuts", status: .failing,
             detail: "\"Switch to Desktop \(missing.map(String.init).joined(separator: ", "))\" \(missing.count == 1 ? "is" : "are") off. Gridspace switches desktops through these. They only appear in Keyboard Shortcuts once the desktop exists.",
             fixes: [
-                Fix(title: "Turn on Control-1...\(cells)") { DesktopShortcuts.enable(upTo: cells) },
+                Fix(title: "Turn on Control-1...\(desktops)") { DesktopShortcuts.enable(upTo: desktops) },
                 Fix(title: "Open Keyboard settings") { SystemPrefs.open("x-apple.systempreferences:com.apple.Keyboard-Settings.extension") },
             ]
+        )
+    }
+
+    private static func switchOnActivate() -> CheckResult {
+        let on = SystemPrefs.global("AppleSpacesSwitchOnActivate") as? Bool ?? true
+        if on {
+            return CheckResult(id: "activate", title: "Switch to an app's Space", status: .ok, detail: "Focusing a fullscreen app takes you to its Space.")
+        }
+        return CheckResult(
+            id: "activate", title: "Switch to an app's Space", status: .failing,
+            detail: "\"When switching to an application, switch to a Space with open windows\" is off, so swipes can't reach fullscreen apps.",
+            fixes: [Fix(title: "Turn it on") {
+                SystemPrefs.setGlobal("AppleSpacesSwitchOnActivate", true)
+                SystemPrefs.restartDock()
+            }]
         )
     }
 

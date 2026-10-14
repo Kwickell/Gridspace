@@ -1,27 +1,22 @@
 import Foundation
-import GridCore
 
 final class Settings {
-    static let presets: [(rows: Int, cols: Int)] = [(2, 2), (2, 3), (2, 4), (3, 3)]
+    static let columnChoices = [2, 3, 4, 5]
 
     private let defaults = UserDefaults.standard
 
     init() {
         defaults.register(defaults: [
-            "rows": 2,
-            "cols": 2,
+            "columns": 3,
             "fingers": 4,
             "invertVertical": false,
             "showOverlay": true,
         ])
     }
 
-    var grid: Grid {
-        get { Grid(rows: defaults.integer(forKey: "rows"), cols: defaults.integer(forKey: "cols")) }
-        set {
-            defaults.set(newValue.rows, forKey: "rows")
-            defaults.set(newValue.cols, forKey: "cols")
-        }
+    var columns: Int {
+        get { max(1, defaults.integer(forKey: "columns")) }
+        set { defaults.set(newValue, forKey: "columns") }
     }
 
     var fingers: Int {

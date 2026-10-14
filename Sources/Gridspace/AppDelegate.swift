@@ -32,23 +32,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     private func handle(_ swipe: SwipeDirection) {
-        guard let layout = Spaces.layout(), let index = layout.currentIndex else { return }
-        let grid = settings.grid
-        guard let target = grid.target(from: index, swipe: swipe, available: layout.desktopIDs.count, invertVertical: settings.invertVertical) else {
-            if settings.showOverlay, index < grid.cells {
-                overlay.show(grid: grid, current: index, available: layout.desktopIDs.count)
-            }
+        guard let layout = Spaces.layout(), let current = layout.current else { return }
+        let grid = layout.grid(columns: settings.columns)
+        guard let target = grid.target(from: current, swipe: swipe, invertVertical: settings.invertVertical) else {
+            if settings.showOverlay { overlay.show(layout, columns: settings.columns) }
             return
         }
-        if !DesktopShortcuts.switchTo(desktop: layout.shortcutOffset + target + 1) {
+        if !Navigator.go(to: target, in: layout) {
             NSSound.beep()
         }
     }
 
     @objc private func spaceChanged() {
         updateIcon()
-        guard settings.showOverlay, let layout = Spaces.layout(), let index = layout.currentIndex, index < settings.grid.cells else { return }
-        overlay.show(grid: settings.grid, current: index, available: layout.desktopIDs.count)
+        guard settings.showOverlay, let layout = Spaces.layout() else { return }
+        overlay.show(layout, columns: settings.columns)
     }
 
     @objc private func restartGestures() {
@@ -61,21 +59,25 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     private func updateIcon() {
-        let layout = Spaces.layout()
-        statusItem.button?.image = Self.icon(grid: settings.grid, current: layout?.currentIndex)
+        guard let layout = Spaces.layout() else { return }
+        statusItem.button?.image = Self.icon(grid: layout.grid(columns: settings.columns), current: layout.current)
     }
 
-    private static func icon(grid: Grid, current: Int?) -> NSImage {
-        let gap: CGFloat = 1.5, height: CGFloat = 14
-        let cell = (height - CGFloat(grid.rows - 1) * gap) / CGFloat(grid.rows)
-        let width = CGFloat(grid.cols) * cell + CGFloat(grid.cols - 1) * gap
+    private static func icon(grid: GridLayout, current: Int?) -> NSImage {
+        let gap: CGFloat = 1.5, height: CGFloat = 16
+        let rows = max(1, grid.rows)
+        let cell = min(6, (height - CGFloat(rows - 1) * gap) / CGFloat(rows))
+        let width = CGFloat(grid.columns) * cell + CGFloat(grid.columns - 1) * gap
+        let top = (height - (CGFloat(rows) * cell + CGFloat(rows - 1) * gap)) / 2
         let image = NSImage(size: NSSize(width: width, height: height), flipped: true) { _ in
-            for index in 0..<grid.cells {
-                guard let (row, col) = grid.position(of: index) else { continue }
-                let rect = NSRect(x: CGFloat(col) * (cell + gap), y: CGFloat(row) * (cell + gap), width: cell, height: cell)
-                let path = NSBezierPath(roundedRect: rect.insetBy(dx: 0.5, dy: 0.5), xRadius: 1.5, yRadius: 1.5)
-                NSColor.black.set()
-                if index == current { path.fill() } else { path.lineWidth = 1; path.stroke() }
+            NSColor.black.set()
+            for item in 0..<grid.items {
+                guard let (row, col) = grid.position(of: item) else { continue }
+                let rect = NSRect(x: CGFloat(col) * (cell + gap), y: top + CGFloat(row) * (cell + gap), width: cell, height: cell)
+                let path = grid.isApp(item)
+                    ? NSBezierPath(ovalIn: rect.insetBy(dx: 0.5, dy: 0.5))
+                    : NSBezierPath(roundedRect: rect.insetBy(dx: 0.5, dy: 0.5), xRadius: 1.2, yRadius: 1.2)
+                if item == current { path.fill() } else { path.lineWidth = 1; path.stroke() }
             }
             return true
         }
@@ -94,26 +96,26 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     func menuNeedsUpdate(_ menu: NSMenu) {
         menu.removeAllItems()
-        let grid = settings.grid
         let layout = Spaces.layout()
 
-        if let index = layout?.currentIndex, let (row, col) = grid.position(of: index) {
-            menu.addItem(.info("Desktop \(index + 1): row \(row + 1), column \(col + 1)"))
+        if let layout, let current = layout.current {
+            let desktops = layout.desktopIDs.count
+            menu.addItem(.info(current < desktops ? "Desktop \(current + 1) of \(desktops)" : layout.apps[current - desktops].name))
         } else {
-            menu.addItem(.info("Current space is outside the grid"))
+            menu.addItem(.info("Current Space is unknown"))
         }
         menu.addItem(.separator())
 
-        let gridMenu = NSMenu()
-        for preset in Settings.presets {
-            let item = ActionItem("\(preset.rows) × \(preset.cols)") { [weak self] in
-                self?.settings.grid = Grid(rows: preset.rows, cols: preset.cols)
+        let columnMenu = NSMenu()
+        for count in Settings.columnChoices {
+            let item = ActionItem("\(count)") { [weak self] in
+                self?.settings.columns = count
                 self?.updateIcon()
             }
-            item.state = grid == Grid(rows: preset.rows, cols: preset.cols) ? .on : .off
-            gridMenu.addItem(item)
+            item.state = settings.columns == count ? .on : .off
+            columnMenu.addItem(item)
         }
-        menu.addItem(.submenu("Grid", gridMenu))
+        menu.addItem(.submenu("Columns", columnMenu))
 
         let fingerMenu = NSMenu()
         for count in [3, 4] {

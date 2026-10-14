@@ -14,11 +14,19 @@ enum DesktopShortcuts {
         let flags: CGEventFlags
     }
 
+    enum Step: String {
+        case left = "79", right = "81"
+    }
+
     private static func hotkeyID(desktop: Int) -> String { String(117 + desktop) }
 
-    static func binding(desktop: Int) -> Binding? {
+    static func binding(desktop: Int) -> Binding? { binding(id: hotkeyID(desktop: desktop)) }
+
+    static func binding(step: Step) -> Binding? { binding(id: step.rawValue) }
+
+    private static func binding(id: String) -> Binding? {
         guard let all = SystemPrefs.value(key, in: domain) as? [String: Any],
-              let entry = all[hotkeyID(desktop: desktop)] as? [String: Any],
+              let entry = all[id] as? [String: Any],
               entry["enabled"] as? Bool == true,
               let value = entry["value"] as? [String: Any],
               let params = value["parameters"] as? [Int], params.count == 3,
@@ -56,12 +64,24 @@ enum DesktopShortcuts {
     @discardableResult
     static func switchTo(desktop: Int) -> Bool {
         guard let binding = binding(desktop: desktop) else { return false }
+        press(binding)
+        return true
+    }
+
+    /// Moves one Space left or right in Mission Control order, fullscreen apps included.
+    @discardableResult
+    static func step(_ step: Step) -> Bool {
+        guard let binding = binding(step: step) else { return false }
+        press(binding)
+        return true
+    }
+
+    private static func press(_ binding: Binding) {
         let source = CGEventSource(stateID: .hidSystemState)
         for keyDown in [true, false] {
             let event = CGEvent(keyboardEventSource: source, virtualKey: binding.keyCode, keyDown: keyDown)
             event?.flags = binding.flags
             event?.post(tap: .cghidEventTap)
         }
-        return true
     }
 }

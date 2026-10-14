@@ -12,6 +12,16 @@ enum SystemPrefs {
         CFPreferencesAppSynchronize(domain as CFString)
     }
 
+    static func global(_ key: String) -> Any? {
+        CFPreferencesAppSynchronize(kCFPreferencesAnyApplication)
+        return CFPreferencesCopyAppValue(key as CFString, kCFPreferencesAnyApplication)
+    }
+
+    static func setGlobal(_ key: String, _ value: Any) {
+        CFPreferencesSetAppValue(key as CFString, value as AnyObject, kCFPreferencesAnyApplication)
+        CFPreferencesAppSynchronize(kCFPreferencesAnyApplication)
+    }
+
     static func setCurrentHostGlobal(_ key: String, _ value: Any) {
         CFPreferencesSetValue(key as CFString, value as AnyObject, kCFPreferencesAnyApplication, kCFPreferencesCurrentUser, kCFPreferencesCurrentHost)
         CFPreferencesSynchronize(kCFPreferencesAnyApplication, kCFPreferencesCurrentUser, kCFPreferencesCurrentHost)
