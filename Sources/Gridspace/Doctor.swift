@@ -78,7 +78,7 @@ enum Doctor {
         let list = Array(Set(conflicts.compactMap { SystemGestures.names[$0] })).sorted().joined(separator: ", ")
         return CheckResult(
             id: "gestures", title: title, status: .failing,
-            detail: "macOS uses \(fingers) fingers for: \(list). Gridspace ignores swipes until they're off. The menu's \"Gridspace swipes\" toggle switches between the two. If the fix doesn't take, toggle them off in Trackpad settings or log out and back in.",
+            detail: "macOS uses \(fingers) fingers for: \(list). Gridspace ignores swipes until they're off. Settings > \"Gridspace handles \(fingers)-finger swipes\" switches between the two. If the fix doesn't take, toggle them off in Trackpad settings or log out and back in.",
             fixes: [
                 Fix(title: "Turn them off") { SystemGestures.disable(fingers: fingers) },
                 Fix(title: "Open Trackpad settings") { SystemPrefs.open("x-apple.systempreferences:com.apple.Trackpad-Settings.extension") },

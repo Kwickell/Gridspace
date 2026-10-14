@@ -11,6 +11,15 @@ if let flag = arguments.firstIndex(of: "--go"), flag + 1 < arguments.count, let 
     RunLoop.main.run(until: Date().addingTimeInterval(0.3))
     exit(ok ? 0 : 1)
 }
+if arguments.contains("--overlay") {
+    guard let layout = Spaces.layout() else { exit(1) }
+    NSApplication.shared.setActivationPolicy(.accessory)
+    NSApplication.shared.finishLaunching()
+    let overlay = GridOverlay()
+    overlay.show(layout)
+    RunLoop.main.run(until: Date().addingTimeInterval(1.2))
+    exit(0)
+}
 if arguments.contains("--list") {
     guard let layout = Spaces.layout() else { exit(1) }
     for (cell, _) in layout.grid.cells.enumerated() {
