@@ -54,12 +54,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private func syncOrder() {
         guard let layout = Spaces.layout() else { return }
         GridStore.sync(layout)
+        arrange?.refresh()
     }
 
     @objc private func spaceChanged() {
         Navigator.spaceChanged()
         guard let layout = Spaces.layout() else { return }
         GridStore.sync(layout)
+        arrange?.refresh()
         updateIcon()
         if settings.showOverlay { overlay.show(layout) }
     }
@@ -81,7 +83,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private static func icon(grid: CellGrid, current: Int?) -> NSImage {
         let gap: CGFloat = 1.5, height: CGFloat = 16
         let rows = max(1, grid.rows)
-        let cell = min(6, (height - CGFloat(rows - 1) * gap) / CGFloat(rows))
+        let cell = max(1, min(6, (height - CGFloat(rows - 1) * gap) / CGFloat(rows)))
         let width = CGFloat(grid.columns) * cell + CGFloat(grid.columns - 1) * gap
         let top = (height - (CGFloat(rows) * cell + CGFloat(rows - 1) * gap)) / 2
         let image = NSImage(size: NSSize(width: width, height: height), flipped: true) { _ in

@@ -13,7 +13,8 @@ final class ArrangeModel: ObservableObject {
 
     @Published private(set) var grid = CellGrid(rows: 1, columns: 1)
     @Published private(set) var tiles: [String: Tile] = [:]
-    @Published var dragging: Int?
+    /// Key of the Space being dragged; a key rather than a cell so a resize mid-drag can't retarget it.
+    @Published var dragging: String?
     private var displayID = ""
     private var missionControlKeys: [String] = []
     private let onChange: () -> Void
@@ -30,9 +31,9 @@ final class ArrangeModel: ObservableObject {
         missionControlKeys = layout.items.map(\.key)
         grid = layout.grid
         let currentKey = layout.current.flatMap { layout.grid.cells[$0] }
-        tiles = Dictionary(uniqueKeysWithValues: layout.items.map { item in
+        tiles = Dictionary(layout.items.map { item in
             (item.key, Tile(key: item.key, name: item.name, icon: item.icon, isCurrent: item.key == currentKey))
-        })
+        }, uniquingKeysWith: { first, _ in first })
     }
 
     func tile(at cell: Int) -> Tile? {
@@ -40,26 +41,38 @@ final class ArrangeModel: ObservableObject {
     }
 
     func drop(on cell: Int) {
-        guard let from = dragging else { return }
+        guard let key = dragging else { return }
         dragging = nil
-        grid.move(from: from, to: cell)
-        save()
+        edit { grid in
+            if let from = grid.index(of: key) { grid.move(from: from, to: cell) }
+        }
     }
 
     func resize(rows: Int, columns: Int) {
-        grid = grid.resized(rows: rows, columns: columns)
-        save()
+        dragging = nil
+        edit { $0 = $0.resized(rows: rows, columns: columns) }
     }
 
     /// Mission Control order, packed into the current width.
     func reset() {
-        grid = CellGrid.packed(missionControlKeys, columns: grid.columns)
-        save()
+        dragging = nil
+        edit { $0 = CellGrid.packed(missionControlKeys, columns: $0.columns) }
     }
 
-    private func save() {
-        GridStore.save(grid, for: displayID)
+    /// Applies an edit to the shown grid brought up to date with the live Spaces, so Spaces that opened
+    /// or closed while the window was open aren't lost or resurrected by the save.
+    private func edit(_ change: (inout CellGrid) -> Void) {
+        guard let layout = Spaces.layout(grid: grid), layout.displayID == displayID else { reload(); return }
+        var updated = layout.grid
+        change(&updated)
+        GridStore.save(updated, for: displayID)
+        reload()
         onChange()
+    }
+
+    /// Picks up Spaces that opened or closed, unless a drag is in progress.
+    func refresh() {
+        if dragging == nil { reload() }
     }
 }
 
@@ -117,11 +130,11 @@ struct ArrangeView: View {
                 Text(tile.name).font(.caption).lineLimit(1).truncationMode(.tail)
             }
             .frame(width: size, height: size - 12)
-            .background(shape.fill(Color.primary.opacity(model.dragging == index ? 0.18 : 0.07)))
+            .background(shape.fill(Color.primary.opacity(model.dragging == tile.key ? 0.18 : 0.07)))
             .overlay(shape.stroke(tile.isCurrent ? Color.accentColor : .clear, lineWidth: 2))
             .contentShape(Rectangle())
             .onDrag {
-                model.dragging = index
+                model.dragging = tile.key
                 return NSItemProvider(object: tile.key as NSString)
             }
             .onDrop(of: [.text], delegate: CellDrop(cell: index, model: model))
@@ -170,6 +183,10 @@ final class ArrangeWindowController: NSWindowController, NSWindowDelegate {
         window?.center()
         showWindow(nil)
         NSApp.activate(ignoringOtherApps: true)
+    }
+
+    func refresh() {
+        if window?.isVisible == true { model.refresh() }
     }
 
     func windowDidResignKey(_ notification: Notification) {
