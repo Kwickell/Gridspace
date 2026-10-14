@@ -8,6 +8,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private let overlay = GridOverlay()
     private var statusItem: NSStatusItem!
     private var doctor: DoctorWindowController?
+    private var arrange: ArrangeWindowController?
+    private var arrangeHotkey: Hotkey?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
@@ -24,6 +26,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         // MultitouchSupport stops delivering frames after sleep.
         workspace.addObserver(self, selector: #selector(restartGestures), name: NSWorkspace.didWakeNotification, object: nil)
 
+        arrangeHotkey = Hotkey.arrange { [weak self] in self?.showArrange() }
+        if let layout = Spaces.layout() { SpaceOrder.sync(layout) }
         updateIcon()
         if checks().contains(where: { $0.status == .failing }) { showDoctor() }
     }
@@ -48,9 +52,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     @objc private func spaceChanged() {
         Navigator.spaceChanged()
+        guard let layout = Spaces.layout() else { return }
+        SpaceOrder.sync(layout)
         updateIcon()
-        guard settings.showOverlay, let layout = Spaces.layout() else { return }
-        overlay.show(layout, columns: settings.columns)
+        if settings.showOverlay { overlay.show(layout, columns: settings.columns) }
     }
 
     @objc private func restartGestures() {
@@ -78,15 +83,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             for item in 0..<grid.items {
                 guard let (row, col) = grid.position(of: item) else { continue }
                 let rect = NSRect(x: CGFloat(col) * (cell + gap), y: top + CGFloat(row) * (cell + gap), width: cell, height: cell)
-                let path = grid.isApp(item)
-                    ? NSBezierPath(ovalIn: rect.insetBy(dx: 0.5, dy: 0.5))
-                    : NSBezierPath(roundedRect: rect.insetBy(dx: 0.5, dy: 0.5), xRadius: 1.2, yRadius: 1.2)
+                let path = NSBezierPath(roundedRect: rect.insetBy(dx: 0.5, dy: 0.5), xRadius: 1.2, yRadius: 1.2)
                 if item == current { path.fill() } else { path.lineWidth = 1; path.stroke() }
             }
             return true
         }
         image.isTemplate = true
         return image
+    }
+
+    private func showArrange() {
+        if arrange == nil {
+            arrange = ArrangeWindowController(columns: settings.columns) { [weak self] in self?.updateIcon() }
+        }
+        arrange?.present(columns: settings.columns)
     }
 
     private func showDoctor() {
@@ -103,12 +113,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         let layout = Spaces.layout()
 
         if let layout, let current = layout.current {
-            let desktops = layout.desktopIDs.count
-            menu.addItem(.info(current < desktops ? "Desktop \(current + 1) of \(desktops)" : layout.apps[current - desktops].name))
+            menu.addItem(.info("\(layout.items[current].name), \(current + 1) of \(layout.items.count)"))
         } else {
             menu.addItem(.info("Current Space is unknown"))
         }
         menu.addItem(.separator())
+
+        let arrangeItem = ActionItem("Arrange Spaces…") { [weak self] in self?.showArrange() }
+        arrangeItem.keyEquivalent = "g"
+        arrangeItem.keyEquivalentModifierMask = [.control, .option, .command]
+        menu.addItem(arrangeItem)
 
         let columnMenu = NSMenu()
         for count in Settings.columnChoices {

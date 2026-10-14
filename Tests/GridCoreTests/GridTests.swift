@@ -3,27 +3,24 @@ import XCTest
 
 final class GridLayoutTests: XCTestCase {
     // [0] [1] [2]
-    // [3] [4]
-    // [5] [6] [7]   apps
-    // [8]
-    let layout = GridLayout(columns: 3, desktops: 5, apps: 4)
+    // [3] [4] [5]
+    // [6] [7]
+    let layout = GridLayout(columns: 3, items: 8)
 
     func testPositions() {
-        XCTAssertEqual(layout.rows, 4)
+        XCTAssertEqual(layout.rows, 3)
         XCTAssertTrue(layout.position(of: 4)! == (1, 1))
-        XCTAssertTrue(layout.position(of: 5)! == (2, 0))
-        XCTAssertTrue(layout.position(of: 8)! == (3, 0))
-        XCTAssertNil(layout.position(of: 9))
-        XCTAssertTrue(layout.isApp(5))
-        XCTAssertFalse(layout.isApp(4))
+        XCTAssertTrue(layout.position(of: 7)! == (2, 1))
+        XCTAssertNil(layout.position(of: 8))
+        XCTAssertNil(layout.position(of: -1))
     }
 
     func testHorizontalIsNaturalAndStopsAtEdges() {
         XCTAssertEqual(layout.target(from: 0, swipe: .left), 1)
         XCTAssertEqual(layout.target(from: 1, swipe: .right), 0)
         XCTAssertNil(layout.target(from: 2, swipe: .left))
-        XCTAssertNil(layout.target(from: 4, swipe: .left))
-        XCTAssertNil(layout.target(from: 5, swipe: .right))
+        XCTAssertNil(layout.target(from: 3, swipe: .right))
+        XCTAssertNil(layout.target(from: 7, swipe: .left))
     }
 
     func testVertical() {
@@ -31,32 +28,34 @@ final class GridLayoutTests: XCTestCase {
         XCTAssertEqual(layout.target(from: 4, swipe: .down), 1)
         XCTAssertEqual(layout.target(from: 1, swipe: .down, invertVertical: true), 4)
         XCTAssertNil(layout.target(from: 0, swipe: .down))
-        XCTAssertNil(layout.target(from: 8, swipe: .up))
+        XCTAssertNil(layout.target(from: 6, swipe: .up))
     }
 
-    func testVerticalIntoShorterRowClamps() {
-        XCTAssertEqual(layout.target(from: 2, swipe: .up), 4)
-        XCTAssertEqual(layout.target(from: 7, swipe: .up), 8)
-    }
-
-    func testDesktopsToAppsRow() {
-        XCTAssertEqual(layout.target(from: 3, swipe: .up), 5)
-        XCTAssertEqual(layout.target(from: 4, swipe: .up), 6)
+    func testIntoShorterLastRowClamps() {
+        XCTAssertEqual(layout.target(from: 5, swipe: .up), 7)
         XCTAssertEqual(layout.target(from: 7, swipe: .down), 4)
     }
 
-    func testAppsNeverShiftDesktops() {
-        let more = GridLayout(columns: 3, desktops: 5, apps: 7)
-        for d in 0..<5 { XCTAssertTrue(more.position(of: d)! == layout.position(of: d)!) }
+    func testEmptyAndSingle() {
+        XCTAssertEqual(GridLayout(columns: 3, items: 0).rows, 0)
+        XCTAssertNil(GridLayout(columns: 3, items: 0).target(from: 0, swipe: .left))
+        XCTAssertNil(GridLayout(columns: 3, items: 1).target(from: 0, swipe: .up))
+        XCTAssertEqual(GridLayout(columns: 0, items: 2).columns, 1)
+    }
+}
+
+final class OrderingTests: XCTestCase {
+    func testSavedOrderWinsAndNewItemsGoLast() {
+        let items = ["desk", "orca", "ghostty", "spotify", "new"]
+        let saved = ["spotify", "desk", "gone", "orca", "ghostty"]
+        XCTAssertEqual(ordered(items, key: { $0 }, saved: saved), ["spotify", "desk", "orca", "ghostty", "new"])
     }
 
-    func testNoAppsOrNoDesktops() {
-        let onlyDesktops = GridLayout(columns: 2, desktops: 4, apps: 0)
-        XCTAssertEqual(onlyDesktops.rows, 2)
-        XCTAssertNil(onlyDesktops.target(from: 3, swipe: .up))
-        let onlyApps = GridLayout(columns: 2, desktops: 0, apps: 3)
-        XCTAssertEqual(onlyApps.target(from: 0, swipe: .up), 2)
-        XCTAssertEqual(GridLayout(columns: 0, desktops: 0, apps: 0).rows, 0)
-        XCTAssertNil(GridLayout(columns: 3, desktops: 0, apps: 0).target(from: 0, swipe: .left))
+    func testNoSavedOrderKeepsOriginal() {
+        XCTAssertEqual(ordered(["b", "a", "c"], key: { $0 }, saved: []), ["b", "a", "c"])
+    }
+
+    func testNewItemsKeepTheirRelativeOrder() {
+        XCTAssertEqual(ordered(["x", "a", "y", "b"], key: { $0 }, saved: ["b", "a"]), ["b", "a", "x", "y"])
     }
 }

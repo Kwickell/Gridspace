@@ -3,45 +3,32 @@ public enum SwipeDirection: Equatable {
     case left, right, up, down
 }
 
-/// Desktops fill rows of a fixed width, and fullscreen apps start on their own row below them,
-/// so opening or closing an app never moves a desktop.
-/// Items are numbered desktops first, then apps.
+/// Items fill rows of a fixed width, left to right, top to bottom.
 public struct GridLayout: Equatable {
     public let columns: Int
-    public let desktops: Int
-    public let apps: Int
+    public let items: Int
 
-    public init(columns: Int, desktops: Int, apps: Int) {
+    public init(columns: Int, items: Int) {
         self.columns = max(1, columns)
-        self.desktops = max(0, desktops)
-        self.apps = max(0, apps)
+        self.items = max(0, items)
     }
 
-    public var items: Int { desktops + apps }
-    public var desktopRows: Int { rowCount(desktops) }
-    public var rows: Int { desktopRows + rowCount(apps) }
-
-    public func isApp(_ item: Int) -> Bool { item >= desktops && item < items }
+    public var rows: Int { (items + columns - 1) / columns }
 
     public func position(of item: Int) -> (row: Int, col: Int)? {
         guard item >= 0, item < items else { return nil }
-        if item < desktops { return (item / columns, item % columns) }
-        let app = item - desktops
-        return (desktopRows + app / columns, app % columns)
+        return (item / columns, item % columns)
     }
 
     public func item(row: Int, col: Int) -> Int? {
-        guard col >= 0, col < columns, row >= 0, row < rows else { return nil }
-        let item = row < desktopRows
-            ? row * columns + col
-            : desktops + (row - desktopRows) * columns + col
-        let sectionEnd = row < desktopRows ? desktops : items
-        return item < sectionEnd ? item : nil
+        guard row >= 0, col >= 0, col < columns else { return nil }
+        let item = row * columns + col
+        return item < items ? item : nil
     }
 
     /// The item a swipe lands on, or nil at the edge of the grid.
     /// Swipes are "natural", like the system's horizontal swipe: fingers moving left reveal the item to the right.
-    /// Moving vertically into a shorter row lands on that row's last item.
+    /// Moving down into the shorter last row lands on its last item.
     public func target(from item: Int, swipe: SwipeDirection, invertVertical: Bool = false) -> Int? {
         guard let (row, col) = position(of: item) else { return nil }
         switch swipe {
@@ -51,12 +38,22 @@ public struct GridLayout: Equatable {
             let down = (swipe == .up) != invertVertical
             let next = row + (down ? 1 : -1)
             guard next >= 0, next < rows else { return nil }
-            for c in stride(from: col, through: 0, by: -1) {
-                if let found = self.item(row: next, col: c) { return found }
-            }
-            return nil
+            return self.item(row: next, col: col) ?? min(items - 1, next * columns + columns - 1)
         }
     }
+}
 
-    private func rowCount(_ n: Int) -> Int { (n + columns - 1) / columns }
+/// Puts items in a saved order: known keys first in their saved order, then new ones in their original order.
+public func ordered<T>(_ items: [T], key: (T) -> String, saved: [String]) -> [T] {
+    let rank = Dictionary(saved.enumerated().map { ($1, $0) }, uniquingKeysWith: { first, _ in first })
+    return items.enumerated()
+        .sorted { a, b in
+            switch (rank[key(a.element)], rank[key(b.element)]) {
+            case let (x?, y?): return x < y
+            case (.some, nil): return true
+            case (nil, .some): return false
+            case (nil, nil): return a.offset < b.offset
+            }
+        }
+        .map(\.element)
 }

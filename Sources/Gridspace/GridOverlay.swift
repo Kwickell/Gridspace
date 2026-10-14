@@ -23,7 +23,10 @@ final class GridOverlay {
         guard let current = layout.current else { return }
         view.grid = layout.grid(columns: columns)
         view.current = current
-        view.icons = layout.apps.map { NSRunningApplication(processIdentifier: $0.pid)?.icon }
+        view.items = layout.items.map { item in
+            if case .desktop(let number) = item.kind { return .label("\(number)") }
+            return item.icon.map(GridView.Cell.icon) ?? .label(String(item.name.prefix(1)))
+        }
         let size = view.preferredSize
         let screen = NSScreen.main?.frame ?? .zero
         panel.setFrame(NSRect(x: screen.midX - size.width / 2, y: screen.midY - size.height / 2, width: size.width, height: size.height), display: true)
@@ -43,55 +46,42 @@ final class GridOverlay {
 }
 
 private final class GridView: NSView {
-    private let cell: CGFloat = 40, gap: CGFloat = 8, padding: CGFloat = 16, sectionGap: CGFloat = 18
+    enum Cell {
+        case label(String)
+        case icon(NSImage)
+    }
 
-    var grid = GridLayout(columns: 1, desktops: 0, apps: 0)
+    private let cell: CGFloat = 40, gap: CGFloat = 8, padding: CGFloat = 16
+
+    var grid = GridLayout(columns: 1, items: 0)
     var current = 0
-    var icons: [NSImage?] = []
-
-    private var hasSections: Bool { grid.desktops > 0 && grid.apps > 0 }
+    var items: [Cell] = []
 
     var preferredSize: NSSize {
         let rows = CGFloat(grid.rows)
         return NSSize(
             width: CGFloat(grid.columns) * cell + CGFloat(grid.columns - 1) * gap + 2 * padding,
-            height: rows * cell + max(0, rows - 1) * gap + (hasSections ? sectionGap - gap : 0) + 2 * padding
+            height: rows * cell + max(0, rows - 1) * gap + 2 * padding
         )
     }
 
     override var isFlipped: Bool { true }
 
-    private func rect(row: Int, col: Int) -> NSRect {
-        let sectionShift = hasSections && row >= grid.desktopRows ? sectionGap - gap : 0
-        return NSRect(
-            x: padding + CGFloat(col) * (cell + gap),
-            y: padding + CGFloat(row) * (cell + gap) + sectionShift,
-            width: cell, height: cell
-        )
-    }
-
     override func draw(_ dirtyRect: NSRect) {
         NSColor.black.withAlphaComponent(0.6).setFill()
         NSBezierPath(roundedRect: bounds, xRadius: 14, yRadius: 14).fill()
 
-        if hasSections {
-            let y = rect(row: grid.desktopRows, col: 0).minY - sectionGap / 2
-            NSColor.white.withAlphaComponent(0.2).setFill()
-            NSRect(x: padding, y: y - 0.5, width: bounds.width - 2 * padding, height: 1).fill()
-        }
-
-        for item in 0..<grid.items {
-            guard let (row, col) = grid.position(of: item) else { continue }
-            let frame = rect(row: row, col: col)
-            let selected = item == current
-            let path = NSBezierPath(roundedRect: frame, xRadius: 7, yRadius: 7)
+        for (index, content) in items.enumerated() {
+            guard let (row, col) = grid.position(of: index) else { continue }
+            let frame = NSRect(x: padding + CGFloat(col) * (cell + gap), y: padding + CGFloat(row) * (cell + gap), width: cell, height: cell)
+            let selected = index == current
             NSColor.white.withAlphaComponent(selected ? 0.95 : 0.22).setFill()
-            path.fill()
+            NSBezierPath(roundedRect: frame, xRadius: 7, yRadius: 7).fill()
 
-            if grid.isApp(item), let icon = icons[safe: item - grid.desktops] ?? nil {
+            switch content {
+            case .icon(let icon):
                 icon.draw(in: frame.insetBy(dx: 5, dy: 5), from: .zero, operation: .sourceOver, fraction: selected ? 1 : 0.7, respectFlipped: true, hints: nil)
-            } else {
-                let label = grid.isApp(item) ? "•" : "\(item + 1)"
+            case .label(let label):
                 let attributes: [NSAttributedString.Key: Any] = [
                     .font: NSFont.systemFont(ofSize: 15, weight: .semibold),
                     .foregroundColor: selected ? NSColor.black : NSColor.white.withAlphaComponent(0.85),
@@ -101,8 +91,4 @@ private final class GridView: NSView {
             }
         }
     }
-}
-
-private extension Array {
-    subscript(safe index: Int) -> Element? { indices.contains(index) ? self[index] : nil }
 }

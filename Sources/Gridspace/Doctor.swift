@@ -27,7 +27,6 @@ enum Doctor {
             eventTap(),
             trackpad(deviceCount: deviceCount),
             systemGestures(fingers: settings.fingers),
-            rearrangeSpaces(),
             desktopCount(),
             displays(),
         ]
@@ -87,26 +86,11 @@ enum Doctor {
         )
     }
 
-    private static func rearrangeSpaces() -> CheckResult {
-        let on = SystemPrefs.value("mru-spaces", in: "com.apple.dock") as? Bool ?? true
-        if !on {
-            return CheckResult(id: "mru", title: "Fixed desktop order", status: .ok, detail: "Desktops stay where you put them.")
-        }
-        return CheckResult(
-            id: "mru", title: "Fixed desktop order", status: .failing,
-            detail: "\"Automatically rearrange Spaces based on most recent use\" is on, so desktops move around the grid by themselves.",
-            fixes: [Fix(title: "Turn it off") {
-                SystemPrefs.set("mru-spaces", false, in: "com.apple.dock")
-                SystemPrefs.restartDock()
-            }]
-        )
-    }
-
     private static func desktopCount() -> CheckResult {
         guard let layout = Spaces.layout() else {
             return CheckResult(id: "desktops", title: "Spaces", status: .failing, detail: "Could not read the Space list.")
         }
-        let desktops = layout.desktopIDs.count, apps = layout.apps.count
+        let desktops = layout.desktopCount, apps = layout.items.count - layout.desktopCount
         let summary = "\(desktops) desktop\(desktops == 1 ? "" : "s") and \(apps) fullscreen app\(apps == 1 ? "" : "s")."
         if desktops + apps < 2 {
             return CheckResult(

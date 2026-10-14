@@ -13,9 +13,8 @@ if let flag = arguments.firstIndex(of: "--go"), flag + 1 < arguments.count, let 
 }
 if arguments.contains("--list") {
     guard let layout = Spaces.layout() else { exit(1) }
-    let names = layout.desktopIDs.indices.map { "Desktop \($0 + 1)" } + layout.apps.map(\.name)
-    for (item, name) in names.enumerated() {
-        print("\(item + 1)\(item == layout.current ? "*" : " ") \(name)")
+    for (index, item) in layout.items.enumerated() {
+        print("\(index + 1)\(index == layout.current ? "*" : " ") \(item.name)")
     }
     exit(0)
 }

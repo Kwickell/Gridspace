@@ -31,8 +31,8 @@ enum Navigator {
     @discardableResult
     static func go(to item: Int, in layout: SpaceLayout) -> Bool {
         guard start(),
-              let target = layout.spaceID(of: item),
-              let index = layout.missionControlOrder.firstIndex(of: target)
+              layout.items.indices.contains(item),
+              let index = layout.missionControlOrder.firstIndex(of: layout.items[item].id)
         else { return false }
 
         // ISS switches the display under the cursor; refuse rather than move a different display's Spaces.
