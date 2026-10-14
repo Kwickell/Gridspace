@@ -5,9 +5,10 @@ if arguments.contains("--doctor") {
     exit(DoctorCLI.run())
 }
 if let flag = arguments.firstIndex(of: "--go"), flag + 1 < arguments.count, let item = Int(arguments[flag + 1]) {
-    guard let layout = Spaces.layout() else { exit(1) }
+    guard let layout = Spaces.layout(), Navigator.start() else { exit(1) }
     let ok = Navigator.go(to: item - 1, in: layout)
-    RunLoop.main.run(until: Date().addingTimeInterval(Navigator.settleDelay + 0.6))
+    // ISS's event tap only passes the posted swipes on while the run loop runs.
+    RunLoop.main.run(until: Date().addingTimeInterval(0.3))
     exit(ok ? 0 : 1)
 }
 if arguments.contains("--list") {

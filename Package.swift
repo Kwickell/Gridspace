@@ -6,10 +6,15 @@ let package = Package(
     platforms: [.macOS(.v13)],
     targets: [
         .target(name: "MultitouchBridge"),
+        .target(
+            name: "ISS",
+            exclude: ["LICENSE", "README.md"],
+            linkerSettings: [.linkedFramework("ApplicationServices"), .linkedFramework("IOKit")]
+        ),
         .target(name: "GridCore"),
         .executableTarget(
             name: "Gridspace",
-            dependencies: ["GridCore", "MultitouchBridge"]
+            dependencies: ["GridCore", "MultitouchBridge", "ISS"]
         ),
         .testTarget(name: "GridCoreTests", dependencies: ["GridCore"]),
     ]

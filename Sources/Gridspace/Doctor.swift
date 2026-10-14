@@ -26,22 +26,19 @@ enum Doctor {
             accessibility(),
             trackpad(deviceCount: deviceCount),
             systemGestures(fingers: settings.fingers),
-            reduceMotion(),
             rearrangeSpaces(),
             desktopCount(),
-            shortcuts(),
-            switchOnActivate(),
             displays(),
         ]
     }
 
     private static func accessibility() -> CheckResult {
         if AXIsProcessTrusted() {
-            return CheckResult(id: "accessibility", title: "Accessibility access", status: .ok, detail: "Gridspace can send the desktop-switch shortcuts.")
+            return CheckResult(id: "accessibility", title: "Accessibility access", status: .ok, detail: "Gridspace can post the swipes that switch Spaces.")
         }
         return CheckResult(
             id: "accessibility", title: "Accessibility access", status: .failing,
-            detail: "Needed to send the \"Switch to Desktop N\" shortcuts. Turn Gridspace on under Privacy & Security > Accessibility.",
+            detail: "Needed to post the swipes that switch Spaces. Turn Gridspace on under Privacy & Security > Accessibility.",
             fixes: [Fix(title: "Request access") {
                 let prompt = kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String
                 AXIsProcessTrustedWithOptions([prompt: true] as CFDictionary)
@@ -78,17 +75,6 @@ enum Doctor {
         )
     }
 
-    private static func reduceMotion() -> CheckResult {
-        if NSWorkspace.shared.accessibilityDisplayShouldReduceMotion {
-            return CheckResult(id: "motion", title: "Reduce motion", status: .ok, detail: "Desktops fade instead of sliding.")
-        }
-        return CheckResult(
-            id: "motion", title: "Reduce motion", status: .warning,
-            detail: "Off, so every switch slides sideways, even for vertical swipes. Turn on Accessibility > Display > Reduce motion to get a fade.",
-            fixes: [Fix(title: "Open Display settings") { SystemPrefs.open("x-apple.systempreferences:com.apple.Accessibility-Settings.extension?Display") }]
-        )
-    }
-
     private static func rearrangeSpaces() -> CheckResult {
         let on = SystemPrefs.value("mru-spaces", in: "com.apple.dock") as? Bool ?? true
         if !on {
@@ -110,9 +96,6 @@ enum Doctor {
         }
         let desktops = layout.desktopIDs.count, apps = layout.apps.count
         let summary = "\(desktops) desktop\(desktops == 1 ? "" : "s") and \(apps) fullscreen app\(apps == 1 ? "" : "s")."
-        if desktops > DesktopShortcuts.maxDesktops {
-            return CheckResult(id: "desktops", title: "Spaces", status: .warning, detail: "\(summary) Desktops past \(DesktopShortcuts.maxDesktops) have no shortcut, so swipes can't reach them.")
-        }
         if desktops + apps < 2 {
             return CheckResult(
                 id: "desktops", title: "Spaces", status: .warning,
@@ -123,45 +106,6 @@ enum Doctor {
             )
         }
         return CheckResult(id: "desktops", title: "Spaces", status: .ok, detail: summary)
-    }
-
-    private static func shortcuts() -> CheckResult {
-        let desktops = min(Spaces.layout()?.desktopIDs.count ?? 0, DesktopShortcuts.maxDesktops)
-        let missing = DesktopShortcuts.missing(upTo: desktops)
-        let steps = [DesktopShortcuts.Step.left, .right].filter { DesktopShortcuts.binding(step: $0) == nil }
-        if !steps.isEmpty {
-            return CheckResult(
-                id: "shortcuts", title: "Desktop shortcuts", status: .failing,
-                detail: "\"Move left/right a space\" \(steps.count == 1 ? "is" : "are") off. Gridspace uses them when a fullscreen app opens on the wrong Space.",
-                fixes: [Fix(title: "Open Keyboard settings") { SystemPrefs.open("x-apple.systempreferences:com.apple.Keyboard-Settings.extension") }]
-            )
-        }
-        if missing.isEmpty {
-            return CheckResult(id: "shortcuts", title: "Desktop shortcuts", status: .ok, detail: desktops > 1 ? "\"Switch to Desktop 1-\(desktops)\" are on." : "\"Switch to Desktop 1\" is on.")
-        }
-        return CheckResult(
-            id: "shortcuts", title: "Desktop shortcuts", status: .failing,
-            detail: "\"Switch to Desktop \(missing.map(String.init).joined(separator: ", "))\" \(missing.count == 1 ? "is" : "are") off. Gridspace switches desktops through these. They only appear in Keyboard Shortcuts once the desktop exists.",
-            fixes: [
-                Fix(title: "Turn on Control-1...\(desktops)") { DesktopShortcuts.enable(upTo: desktops) },
-                Fix(title: "Open Keyboard settings") { SystemPrefs.open("x-apple.systempreferences:com.apple.Keyboard-Settings.extension") },
-            ]
-        )
-    }
-
-    private static func switchOnActivate() -> CheckResult {
-        let on = SystemPrefs.global("AppleSpacesSwitchOnActivate") as? Bool ?? true
-        if on {
-            return CheckResult(id: "activate", title: "Switch to an app's Space", status: .ok, detail: "Focusing a fullscreen app takes you to its Space.")
-        }
-        return CheckResult(
-            id: "activate", title: "Switch to an app's Space", status: .failing,
-            detail: "\"When switching to an application, switch to a Space with open windows\" is off, so swipes can't reach fullscreen apps.",
-            fixes: [Fix(title: "Turn it on") {
-                SystemPrefs.setGlobal("AppleSpacesSwitchOnActivate", true)
-                SystemPrefs.restartDock()
-            }]
-        )
     }
 
     private static func displays() -> CheckResult {

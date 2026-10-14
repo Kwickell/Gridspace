@@ -15,6 +15,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         menu.delegate = self
         statusItem.menu = menu
 
+        _ = Navigator.start()
         gestures.onSwipe = { [weak self] in self?.handle($0) }
         gestures.start(fingers: settings.fingers)
 
@@ -46,6 +47,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     @objc private func spaceChanged() {
+        Navigator.spaceChanged()
         updateIcon()
         guard settings.showOverlay, let layout = Spaces.layout() else { return }
         overlay.show(layout, columns: settings.columns)
