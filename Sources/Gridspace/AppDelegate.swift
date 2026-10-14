@@ -1,6 +1,9 @@
 import AppKit
+import Carbon.HIToolbox
 import GridCore
-import ServiceManagement
+import OSLog
+
+private let log = Logger(subsystem: "com.kwickell.gridspace", category: "swipe")
 
 final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private let settings = Settings()
@@ -10,6 +13,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var doctor: DoctorWindowController?
     private var arrange: ArrangeWindowController?
     private var arrangeHotkey: Hotkey?
+    private var settingsWindow: HostedWindow<SettingsView>?
+    private var settingsModel: SettingsModel?
+    private var onboarding: HostedWindow<OnboardingView>?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
@@ -26,12 +32,31 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         // MultitouchSupport stops delivering frames after sleep.
         workspace.addObserver(self, selector: #selector(restartGestures), name: NSWorkspace.didWakeNotification, object: nil)
 
-        arrangeHotkey = Hotkey.arrange { [weak self] in self?.showArrange() }
+        registerHotkey()
+        NotificationCenter.default.addObserver(self, selector: #selector(settingsChanged), name: .gridspaceSettingsChanged, object: nil)
         syncOrder()
         // Spaces can open or close without the active Space changing, e.g. closing one from Mission Control.
         Timer.scheduledTimer(withTimeInterval: 2, repeats: true) { [weak self] _ in self?.syncOrder() }
         updateIcon()
-        if checks().contains(where: { $0.status == .failing }) { showDoctor() }
+        if !settings.onboarded {
+            showOnboarding()
+        } else if checks().contains(where: { $0.status == .failing }) {
+            showDoctor()
+        }
+    }
+
+    private func registerHotkey() {
+        arrangeHotkey = nil
+        let shortcut = settings.arrangeShortcut
+        guard shortcut.modifiers != 0 else { return }
+        arrangeHotkey = Hotkey(keyCode: shortcut.keyCode, modifiers: shortcut.modifiers) { [weak self] in self?.showArrange() }
+    }
+
+    @objc private func settingsChanged() {
+        registerHotkey()
+        restartGestures()
+        updateIcon()
+        settingsModel?.refresh()
     }
 
     private func checks() -> [CheckResult] {
@@ -40,15 +65,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     private func handle(_ swipe: SwipeDirection) {
         // While macOS owns these swipes too, acting on them would switch Spaces twice.
-        guard SystemGestures.conflicts(fingers: settings.fingers).isEmpty else { return }
-        guard let layout = Spaces.layout(), let current = Navigator.current(in: layout) else { return }
+        guard SystemGestures.conflicts(fingers: settings.fingers).isEmpty else {
+            log.info("swipe \(String(describing: swipe)) ignored: macOS owns these swipes")
+            return
+        }
+        guard let layout = Spaces.layout(), let current = Navigator.current(in: layout) else {
+            log.info("swipe \(String(describing: swipe)) ignored: current Space not in the grid")
+            return
+        }
         guard let target = layout.grid.target(from: current, swipe: swipe, invertVertical: settings.invertVertical) else {
+            log.info("swipe \(String(describing: swipe)) from cell \(current): edge of the grid")
             if settings.showOverlay { overlay.show(layout) }
             return
         }
-        if !Navigator.go(to: target, in: layout) {
-            NSSound.beep()
-        }
+        let switched = Navigator.go(to: target, in: layout)
+        log.info("swipe \(String(describing: swipe)) from cell \(current) to \(target): \(switched ? "switched" : "refused")")
+        if !switched { NSSound.beep() }
     }
 
     private func syncOrder() {
@@ -111,6 +143,51 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         arrange?.present()
     }
 
+    private func showSettings() {
+        if settingsWindow == nil {
+            let model = SettingsModel(
+                settings: settings,
+                openArrange: { [weak self] in self?.showArrange() },
+                openDoctor: { [weak self] in self?.showDoctor() }
+            )
+            settingsModel = model
+            settingsWindow = HostedWindow(title: "Gridspace Settings", onClose: { model.stopRecording() }) { SettingsView(model: model) }
+        }
+        settingsModel?.refresh()
+        settingsWindow?.present()
+    }
+
+    private func showOnboarding() {
+        if onboarding == nil {
+            let model = OnboardingModel(
+                settings: settings,
+                openArrange: { [weak self] in self?.showArrange() },
+                finish: { [weak self] in
+                    self?.settings.onboarded = true
+                    self?.onboarding?.close()
+                }
+            )
+            onboarding = HostedWindow(title: "Welcome to Gridspace", onClose: { [weak self] in
+                model.stop()
+                self?.onboarding = nil
+            }) { OnboardingView(model: model) }
+        }
+        onboarding?.present()
+    }
+
+    private func showAbout() {
+        let credits = NSMutableAttributedString(
+            string: "Instant switching uses InstantSpaceSwitcher by jurplel (MIT).\n",
+            attributes: [.font: NSFont.systemFont(ofSize: 11)]
+        )
+        credits.append(NSAttributedString(
+            string: "github.com/jurplel/InstantSpaceSwitcher",
+            attributes: [.font: NSFont.systemFont(ofSize: 11), .link: URL(string: "https://github.com/jurplel/InstantSpaceSwitcher")!]
+        ))
+        NSApp.orderFrontStandardAboutPanel(options: [.credits: credits])
+        NSApp.activate(ignoringOtherApps: true)
+    }
+
     private func showDoctor() {
         if doctor == nil {
             doctor = DoctorWindowController { [weak self] in self?.checks() ?? [] }
@@ -132,39 +209,43 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         menu.addItem(.separator())
 
         let arrangeItem = ActionItem("Arrange Spaces…") { [weak self] in self?.showArrange() }
-        arrangeItem.keyEquivalent = "g"
-        arrangeItem.keyEquivalentModifierMask = [.control, .option, .command]
-        menu.addItem(arrangeItem)
-
-        let fingerMenu = NSMenu()
-        for count in [3, 4] {
-            let item = ActionItem("\(count) fingers") { [weak self] in
-                self?.settings.fingers = count
-                self?.restartGestures()
-            }
-            item.state = settings.fingers == count ? .on : .off
-            fingerMenu.addItem(item)
+        let shortcut = settings.arrangeShortcut
+        if shortcut.modifiers != 0, let key = Self.menuKeyEquivalent(shortcut.keyCode) {
+            arrangeItem.keyEquivalent = key
+            arrangeItem.keyEquivalentModifierMask = Self.menuModifiers(shortcut.modifiers)
         }
-        menu.addItem(.submenu("Swipe with", fingerMenu))
+        menu.addItem(arrangeItem)
 
         let fingers = settings.fingers
         let gridspaceOwnsSwipes = SystemGestures.conflicts(fingers: fingers).isEmpty
-        menu.addItem(toggle("Gridspace swipes (macOS \(fingers)-finger swipes off)", gridspaceOwnsSwipes) {
+        menu.addItem(toggle("Gridspace handles \(fingers)-finger swipes", gridspaceOwnsSwipes) { [weak self] in
             if gridspaceOwnsSwipes { SystemGestures.restore(fingers: fingers) } else { SystemGestures.disable(fingers: fingers) }
+            self?.settingsModel?.refresh()
         })
-
-        menu.addItem(toggle("Invert vertical swipe", settings.invertVertical) { [weak self] in self?.settings.invertVertical.toggle() })
-        menu.addItem(toggle("Show grid on switch", settings.showOverlay) { [weak self] in self?.settings.showOverlay.toggle() })
         menu.addItem(.separator())
 
+        let settingsItem = ActionItem("Settings…") { [weak self] in self?.showSettings() }
+        settingsItem.keyEquivalent = ","
+        menu.addItem(settingsItem)
         let problems = checks().filter { $0.status != .ok }.count
         menu.addItem(ActionItem(problems == 0 ? "Doctor…" : "Doctor… (\(problems) to check)") { [weak self] in self?.showDoctor() })
-        let login = SMAppService.mainApp
-        menu.addItem(toggle("Launch at login", login.status == .enabled) {
-            if login.status == .enabled { try? login.unregister() } else { try? login.register() }
-        })
+        menu.addItem(ActionItem("About Gridspace") { [weak self] in self?.showAbout() })
         menu.addItem(.separator())
         menu.addItem(ActionItem("Quit Gridspace") { NSApp.terminate(nil) })
+    }
+
+    private static func menuKeyEquivalent(_ keyCode: UInt32) -> String? {
+        let name = Shortcut.display(keyCode: keyCode, modifiers: 0)
+        return name.count == 1 ? name.lowercased() : nil
+    }
+
+    private static func menuModifiers(_ carbon: UInt32) -> NSEvent.ModifierFlags {
+        var flags: NSEvent.ModifierFlags = []
+        if carbon & UInt32(controlKey) != 0 { flags.insert(.control) }
+        if carbon & UInt32(optionKey) != 0 { flags.insert(.option) }
+        if carbon & UInt32(shiftKey) != 0 { flags.insert(.shift) }
+        if carbon & UInt32(cmdKey) != 0 { flags.insert(.command) }
+        return flags
     }
 
     private func toggle(_ title: String, _ on: Bool, _ action: @escaping () -> Void) -> NSMenuItem {

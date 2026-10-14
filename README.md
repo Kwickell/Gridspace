@@ -10,6 +10,7 @@ It doesn't replace Spaces. Switching uses InstantSpaceSwitcher's synthetic Dock 
 
 ```sh
 make install   # builds, copies to /Applications and launches
+swift scripts/make-icon.swift   # regenerates Resources/AppIcon.icns
 make doctor    # prints the setup checks and exits non-zero if something needs fixing
 build/Gridspace.app/Contents/MacOS/Gridspace --list    # grid items in order, * marks the current one
 build/Gridspace.app/Contents/MacOS/Gridspace --go 3    # jump to item 3
@@ -18,7 +19,9 @@ make test
 
 ## Setup
 
-The Doctor window opens on launch when something is off, and from the menu bar at any time. It checks and offers fixes for:
+The first launch opens a short onboarding: grant Accessibility and Input Monitoring, hand the trackpad swipes to Gridspace, and arrange the grid. Settings (⌘, from the menu) holds the finger count, swipe handover, vertical direction, overlay, the Arrange shortcut and launch at login.
+
+The Doctor (in the menu and Settings) checks the setup any time and offers fixes for:
 
 - Accessibility access (needed to post the switching swipes)
 - a trackpad being present

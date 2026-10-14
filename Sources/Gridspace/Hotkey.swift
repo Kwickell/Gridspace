@@ -26,9 +26,4 @@ final class Hotkey {
         if let ref { UnregisterEventHotKey(ref) }
         if let handler { RemoveEventHandler(handler) }
     }
-
-    /// Control-Option-Command-G.
-    static func arrange(_ action: @escaping () -> Void) -> Hotkey? {
-        Hotkey(keyCode: UInt32(kVK_ANSI_G), modifiers: UInt32(controlKey | optionKey | cmdKey), action: action)
-    }
 }
