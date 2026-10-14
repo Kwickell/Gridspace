@@ -32,6 +32,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     private func handle(_ swipe: SwipeDirection) {
+        // While macOS owns these swipes too, acting on them would switch Spaces twice.
+        guard SystemGestures.conflicts(fingers: settings.fingers).isEmpty else { return }
         guard let layout = Spaces.layout(), let current = layout.current else { return }
         let grid = layout.grid(columns: settings.columns)
         guard let target = grid.target(from: current, swipe: swipe, invertVertical: settings.invertVertical) else {
@@ -127,6 +129,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             fingerMenu.addItem(item)
         }
         menu.addItem(.submenu("Swipe with", fingerMenu))
+
+        let fingers = settings.fingers
+        let gridspaceOwnsSwipes = SystemGestures.conflicts(fingers: fingers).isEmpty
+        menu.addItem(toggle("Gridspace swipes (macOS \(fingers)-finger swipes off)", gridspaceOwnsSwipes) {
+            if gridspaceOwnsSwipes { SystemGestures.restore(fingers: fingers) } else { SystemGestures.disable(fingers: fingers) }
+        })
 
         menu.addItem(toggle("Invert vertical swipe", settings.invertVertical) { [weak self] in self?.settings.invertVertical.toggle() })
         menu.addItem(toggle("Show grid on switch", settings.showOverlay) { [weak self] in self?.settings.showOverlay.toggle() })

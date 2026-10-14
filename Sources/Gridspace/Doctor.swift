@@ -21,8 +21,6 @@ struct CheckResult: Identifiable {
 }
 
 enum Doctor {
-    private static let trackpadDomains = ["com.apple.AppleMultitouchTrackpad", "com.apple.driver.AppleBluetoothMultitouch.trackpad"]
-
     static func run(settings: Settings, deviceCount: Int) -> [CheckResult] {
         [
             accessibility(),
@@ -63,58 +61,21 @@ enum Doctor {
         }
     }
 
-    private static func gestureKeys(fingers: Int) -> [String] {
-        fingers == 3
-            ? ["TrackpadThreeFingerHorizSwipeGesture", "TrackpadThreeFingerVertSwipeGesture", "TrackpadThreeFingerDrag"]
-            : ["TrackpadFourFingerHorizSwipeGesture", "TrackpadFourFingerVertSwipeGesture"]
-    }
-
     private static func systemGestures(fingers: Int) -> CheckResult {
-        let names = [
-            "TrackpadThreeFingerHorizSwipeGesture": "swipe between full-screen apps",
-            "TrackpadFourFingerHorizSwipeGesture": "swipe between full-screen apps",
-            "TrackpadThreeFingerVertSwipeGesture": "Mission Control / App Exposé",
-            "TrackpadFourFingerVertSwipeGesture": "Mission Control / App Exposé",
-            "TrackpadThreeFingerDrag": "three-finger drag",
-        ]
-        let conflicts = gestureKeys(fingers: fingers).filter { key in
-            let value = SystemPrefs.value(key, in: trackpadDomains[0])
-            if key == "TrackpadThreeFingerDrag" { return value as? Bool ?? false }
-            return (value as? Int ?? 2) != 0
-        }
+        let conflicts = SystemGestures.conflicts(fingers: fingers)
         let title = "System \(fingers)-finger gestures"
         if conflicts.isEmpty {
             return CheckResult(id: "gestures", title: title, status: .ok, detail: "No system gesture competes with Gridspace's \(fingers)-finger swipes.")
         }
-        let list = Array(Set(conflicts.compactMap { names[$0] })).sorted().joined(separator: ", ")
+        let list = Array(Set(conflicts.compactMap { SystemGestures.names[$0] })).sorted().joined(separator: ", ")
         return CheckResult(
             id: "gestures", title: title, status: .failing,
-            detail: "macOS also uses \(fingers) fingers for: \(list). Both would fire on every swipe. If the fix doesn't take, toggle them off in Trackpad settings or log out and back in.",
+            detail: "macOS uses \(fingers) fingers for: \(list). Gridspace ignores swipes until they're off. The menu's \"Gridspace swipes\" toggle switches between the two. If the fix doesn't take, toggle them off in Trackpad settings or log out and back in.",
             fixes: [
-                Fix(title: "Turn them off") { disableSystemGestures(fingers: fingers) },
+                Fix(title: "Turn them off") { SystemGestures.disable(fingers: fingers) },
                 Fix(title: "Open Trackpad settings") { SystemPrefs.open("x-apple.systempreferences:com.apple.Trackpad-Settings.extension") },
             ]
         )
-    }
-
-    private static func disableSystemGestures(fingers: Int) {
-        let word = fingers == 3 ? "three" : "four"
-        let verticalKey = fingers == 3 ? "TrackpadThreeFingerVertSwipeGesture" : "TrackpadFourFingerVertSwipeGesture"
-        // The Dock keys switch Mission Control and App Exposé off at every finger count, so only touch them when they use ours.
-        let ownsMissionControl = (SystemPrefs.value(verticalKey, in: trackpadDomains[0]) as? Int ?? 2) != 0
-        for domain in trackpadDomains {
-            for key in gestureKeys(fingers: fingers) {
-                SystemPrefs.set(key, key.hasSuffix("Drag") ? false as Any : 0 as Any, in: domain)
-            }
-        }
-        SystemPrefs.setCurrentHostGlobal("com.apple.trackpad.\(word)FingerHorizSwipeGesture", 0)
-        SystemPrefs.setCurrentHostGlobal("com.apple.trackpad.\(word)FingerVertSwipeGesture", 0)
-        if ownsMissionControl {
-            SystemPrefs.set("showMissionControlGestureEnabled", false, in: "com.apple.dock")
-            SystemPrefs.set("showAppExposeGestureEnabled", false, in: "com.apple.dock")
-        }
-        SystemPrefs.activate()
-        SystemPrefs.restartDock()
     }
 
     private static func reduceMotion() -> CheckResult {
