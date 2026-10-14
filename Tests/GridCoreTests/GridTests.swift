@@ -1,61 +1,86 @@
 import GridCore
 import XCTest
 
-final class GridLayoutTests: XCTestCase {
-    // [0] [1] [2]
-    // [3] [4] [5]
-    // [6] [7]
-    let layout = GridLayout(columns: 3, items: 8)
+final class CellGridTests: XCTestCase {
+    // a . c .
+    // . e . .
+    // g h i .
+    let grid = CellGrid(rows: 3, columns: 4, cells: ["a", nil, "c", nil, nil, "e", nil, nil, "g", "h", "i", nil])
 
-    func testPositions() {
-        XCTAssertEqual(layout.rows, 3)
-        XCTAssertTrue(layout.position(of: 4)! == (1, 1))
-        XCTAssertTrue(layout.position(of: 7)! == (2, 1))
-        XCTAssertNil(layout.position(of: 8))
-        XCTAssertNil(layout.position(of: -1))
+    func testHorizontalSkipsHoles() {
+        XCTAssertEqual(grid.target(from: 0, swipe: .left), 2)
+        XCTAssertEqual(grid.target(from: 2, swipe: .right), 0)
+        XCTAssertNil(grid.target(from: 2, swipe: .left))
+        XCTAssertNil(grid.target(from: 5, swipe: .left))
     }
 
-    func testHorizontalIsNaturalAndStopsAtEdges() {
-        XCTAssertEqual(layout.target(from: 0, swipe: .left), 1)
-        XCTAssertEqual(layout.target(from: 1, swipe: .right), 0)
-        XCTAssertNil(layout.target(from: 2, swipe: .left))
-        XCTAssertNil(layout.target(from: 3, swipe: .right))
-        XCTAssertNil(layout.target(from: 7, swipe: .left))
+    func testVerticalSkipsHoles() {
+        XCTAssertEqual(grid.target(from: 0, swipe: .up), 8)
+        XCTAssertEqual(grid.target(from: 8, swipe: .down), 0)
+        XCTAssertEqual(grid.target(from: 0, swipe: .down, invertVertical: true), 8)
+        XCTAssertEqual(grid.target(from: 5, swipe: .up), 9)
+        XCTAssertNil(grid.target(from: 2, swipe: .down))
+        XCTAssertNil(grid.target(from: 10, swipe: .up))
     }
 
-    func testVertical() {
-        XCTAssertEqual(layout.target(from: 1, swipe: .up), 4)
-        XCTAssertEqual(layout.target(from: 4, swipe: .down), 1)
-        XCTAssertEqual(layout.target(from: 1, swipe: .down, invertVertical: true), 4)
-        XCTAssertNil(layout.target(from: 0, swipe: .down))
-        XCTAssertNil(layout.target(from: 6, swipe: .up))
+    func testPacked() {
+        let g = CellGrid.packed(["a", "b", "c", "d"], columns: 2)
+        XCTAssertEqual(g.rows, 2)
+        XCTAssertEqual(g.cells, ["a", "b", "c", "d"])
+        XCTAssertEqual(CellGrid.packed([], columns: 3).rows, 1)
     }
 
-    func testIntoShorterLastRowClamps() {
-        XCTAssertEqual(layout.target(from: 5, swipe: .up), 7)
-        XCTAssertEqual(layout.target(from: 7, swipe: .down), 4)
+    func testClosedSpaceLeavesHole() {
+        let g = grid.reconciled(with: ["a", "c", "g", "h", "i"])
+        XCTAssertNil(g.cells[5])
+        XCTAssertEqual(g.index(of: "a"), 0)
+        XCTAssertEqual(g.index(of: "i"), 10)
     }
 
-    func testEmptyAndSingle() {
-        XCTAssertEqual(GridLayout(columns: 3, items: 0).rows, 0)
-        XCTAssertNil(GridLayout(columns: 3, items: 0).target(from: 0, swipe: .left))
-        XCTAssertNil(GridLayout(columns: 3, items: 1).target(from: 0, swipe: .up))
-        XCTAssertEqual(GridLayout(columns: 0, items: 2).columns, 1)
-    }
-}
-
-final class OrderingTests: XCTestCase {
-    func testSavedOrderWinsAndNewItemsGoLast() {
-        let items = ["desk", "orca", "ghostty", "spotify", "new"]
-        let saved = ["spotify", "desk", "gone", "orca", "ghostty"]
-        XCTAssertEqual(ordered(items, key: { $0 }, saved: saved), ["spotify", "desk", "orca", "ghostty", "new"])
+    func testNewSpaceGoesAfterLastFilled() {
+        let g = grid.reconciled(with: ["a", "c", "e", "g", "h", "i", "new"])
+        XCTAssertEqual(g.index(of: "new"), 11)
     }
 
-    func testNoSavedOrderKeepsOriginal() {
-        XCTAssertEqual(ordered(["b", "a", "c"], key: { $0 }, saved: []), ["b", "a", "c"])
+    func testNewSpaceFillsEarliestHoleWhenNothingAfterLast() {
+        var full = CellGrid(rows: 2, columns: 2, cells: ["a", nil, "c", "d"])
+        full = full.reconciled(with: ["a", "c", "d", "new"])
+        XCTAssertEqual(full.index(of: "new"), 1)
     }
 
-    func testNewItemsKeepTheirRelativeOrder() {
-        XCTAssertEqual(ordered(["x", "a", "y", "b"], key: { $0 }, saved: ["b", "a"]), ["b", "a", "x", "y"])
+    func testFullGridGrowsByARow() {
+        let g = CellGrid.packed(["a", "b", "c", "d"], columns: 2).reconciled(with: ["a", "b", "c", "d", "e"])
+        XCTAssertEqual(g.rows, 3)
+        XCTAssertEqual(g.columns, 2)
+        XCTAssertEqual(g.index(of: "e"), 4)
+    }
+
+    func testDuplicatesBecomeHoles() {
+        let g = CellGrid(rows: 1, columns: 3, cells: ["a", "a", nil]).reconciled(with: ["a"])
+        XCTAssertEqual(g.cells, ["a", nil, nil])
+    }
+
+    func testMoveSwapsOrFillsHole() {
+        var g = grid
+        g.move(from: 0, to: 1)
+        XCTAssertEqual(g.cells[0], nil)
+        XCTAssertEqual(g.cells[1], "a")
+        g.move(from: 1, to: 2)
+        XCTAssertEqual(g.cells[1], "c")
+        XCTAssertEqual(g.cells[2], "a")
+    }
+
+    func testResizeKeepsPositionsAndRehomesOverflow() {
+        let g = grid.resized(rows: 3, columns: 3)
+        XCTAssertEqual(g.index(of: "a"), 0)
+        XCTAssertEqual(g.index(of: "e"), 4)
+        XCTAssertEqual(g.index(of: "i"), 8)
+        XCTAssertEqual(g.filledCount, 6)
+    }
+
+    func testResizeNeverDropsSpaces() {
+        let g = CellGrid.packed(["a", "b", "c", "d", "e"], columns: 5).resized(rows: 1, columns: 2)
+        XCTAssertEqual(g.rows, 3)
+        XCTAssertEqual(g.filledCount, 5)
     }
 }

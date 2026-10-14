@@ -1,22 +1,14 @@
 import Foundation
 
 final class Settings {
-    static let columnChoices = [2, 3, 4, 5]
-
     private let defaults = UserDefaults.standard
 
     init() {
         defaults.register(defaults: [
-            "columns": 3,
             "fingers": 4,
             "invertVertical": false,
             "showOverlay": true,
         ])
-    }
-
-    var columns: Int {
-        get { max(1, defaults.integer(forKey: "columns")) }
-        set { defaults.set(newValue, forKey: "columns") }
     }
 
     var fingers: Int {

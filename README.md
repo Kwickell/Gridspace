@@ -2,7 +2,7 @@
 
 A menu bar app that lays macOS Spaces out as a 2D grid and moves between them with trackpad swipes in all four directions.
 
-Desktops and fullscreen apps fill rows of a fixed width (2-5 columns), in Gridspace's own order. Arrange Spaces (⌃⌥⌘G or the menu) lets you drag them into any order; new Spaces are added at the end and closed ones drop out. Mission Control's order is never changed. The grid grows and shrinks with however many Spaces exist.
+Each display has a fixed grid (rows × columns) where desktops and fullscreen apps sit in whatever cells you put them, with empty cells allowed. Arrange Spaces (⌃⌥⌘G or the menu) sets the size and lets you drag Spaces onto any cell; dropping on another Space swaps them. A closed Space leaves its cell empty; a new one fills the first free cell after the last filled one, then the earliest free cell, and a full grid grows by a row. Mission Control's order is never changed.
 
 It doesn't replace Spaces. Switching uses InstantSpaceSwitcher's synthetic Dock swipes (vendored in `Sources/ISS`, MIT), which land instantly with no animation, for desktops and fullscreen apps alike.
 
@@ -25,7 +25,7 @@ The Doctor window opens on launch when something is off, and from the menu bar a
 - system 3- or 4-finger swipes, which would fire alongside Gridspace's
 - the desktop and fullscreen app count
 
-Swipes are natural: fingers left go to the Space on the right, fingers up go to the row below. Moving into the shorter last row lands on its last item. "Invert vertical swipe" flips the vertical direction.
+Swipes are natural: fingers left go to the Space on the right, fingers up go to the row below. Empty cells are skipped; if nothing is filled in that direction, nothing happens. "Invert vertical swipe" flips the vertical direction.
 
 ## Limits
 

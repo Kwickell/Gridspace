@@ -42,9 +42,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         // While macOS owns these swipes too, acting on them would switch Spaces twice.
         guard SystemGestures.conflicts(fingers: settings.fingers).isEmpty else { return }
         guard let layout = Spaces.layout(), let current = Navigator.current(in: layout) else { return }
-        let grid = layout.grid(columns: settings.columns)
-        guard let target = grid.target(from: current, swipe: swipe, invertVertical: settings.invertVertical) else {
-            if settings.showOverlay { overlay.show(layout, columns: settings.columns) }
+        guard let target = layout.grid.target(from: current, swipe: swipe, invertVertical: settings.invertVertical) else {
+            if settings.showOverlay { overlay.show(layout) }
             return
         }
         if !Navigator.go(to: target, in: layout) {
@@ -54,15 +53,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     private func syncOrder() {
         guard let layout = Spaces.layout() else { return }
-        SpaceOrder.sync(layout)
+        GridStore.sync(layout)
     }
 
     @objc private func spaceChanged() {
         Navigator.spaceChanged()
         guard let layout = Spaces.layout() else { return }
-        SpaceOrder.sync(layout)
+        GridStore.sync(layout)
         updateIcon()
-        if settings.showOverlay { overlay.show(layout, columns: settings.columns) }
+        if settings.showOverlay { overlay.show(layout) }
     }
 
     @objc private func restartGestures() {
@@ -76,10 +75,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     private func updateIcon() {
         guard let layout = Spaces.layout() else { return }
-        statusItem.button?.image = Self.icon(grid: layout.grid(columns: settings.columns), current: layout.current)
+        statusItem.button?.image = Self.icon(grid: layout.grid, current: layout.current)
     }
 
-    private static func icon(grid: GridLayout, current: Int?) -> NSImage {
+    private static func icon(grid: CellGrid, current: Int?) -> NSImage {
         let gap: CGFloat = 1.5, height: CGFloat = 16
         let rows = max(1, grid.rows)
         let cell = min(6, (height - CGFloat(rows - 1) * gap) / CGFloat(rows))
@@ -87,11 +86,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         let top = (height - (CGFloat(rows) * cell + CGFloat(rows - 1) * gap)) / 2
         let image = NSImage(size: NSSize(width: width, height: height), flipped: true) { _ in
             NSColor.black.set()
-            for item in 0..<grid.items {
-                guard let (row, col) = grid.position(of: item) else { continue }
+            for (index, key) in grid.cells.enumerated() {
+                guard let (row, col) = grid.position(of: index) else { continue }
                 let rect = NSRect(x: CGFloat(col) * (cell + gap), y: top + CGFloat(row) * (cell + gap), width: cell, height: cell)
+                if key == nil {
+                    NSBezierPath(ovalIn: NSRect(x: rect.midX - 0.75, y: rect.midY - 0.75, width: 1.5, height: 1.5)).fill()
+                    continue
+                }
                 let path = NSBezierPath(roundedRect: rect.insetBy(dx: 0.5, dy: 0.5), xRadius: 1.2, yRadius: 1.2)
-                if item == current { path.fill() } else { path.lineWidth = 1; path.stroke() }
+                if index == current { path.fill() } else { path.lineWidth = 1; path.stroke() }
             }
             return true
         }
@@ -101,9 +104,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     private func showArrange() {
         if arrange == nil {
-            arrange = ArrangeWindowController(columns: settings.columns) { [weak self] in self?.updateIcon() }
+            arrange = ArrangeWindowController { [weak self] in self?.updateIcon() }
         }
-        arrange?.present(columns: settings.columns)
+        arrange?.present()
     }
 
     private func showDoctor() {
@@ -119,8 +122,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         menu.removeAllItems()
         let layout = Spaces.layout()
 
-        if let layout, let current = layout.current {
-            menu.addItem(.info("\(layout.items[current].name), \(current + 1) of \(layout.items.count)"))
+        if let layout, let current = layout.current, let item = layout.item(at: current), let (row, col) = layout.grid.position(of: current) {
+            menu.addItem(.info("\(item.name): row \(row + 1), column \(col + 1)"))
         } else {
             menu.addItem(.info("Current Space is unknown"))
         }
@@ -130,17 +133,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         arrangeItem.keyEquivalent = "g"
         arrangeItem.keyEquivalentModifierMask = [.control, .option, .command]
         menu.addItem(arrangeItem)
-
-        let columnMenu = NSMenu()
-        for count in Settings.columnChoices {
-            let item = ActionItem("\(count)") { [weak self] in
-                self?.settings.columns = count
-                self?.updateIcon()
-            }
-            item.state = settings.columns == count ? .on : .off
-            columnMenu.addItem(item)
-        }
-        menu.addItem(.submenu("Columns", columnMenu))
 
         let fingerMenu = NSMenu()
         for count in [3, 4] {

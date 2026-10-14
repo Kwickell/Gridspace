@@ -13,8 +13,9 @@ if let flag = arguments.firstIndex(of: "--go"), flag + 1 < arguments.count, let 
 }
 if arguments.contains("--list") {
     guard let layout = Spaces.layout() else { exit(1) }
-    for (index, item) in layout.items.enumerated() {
-        print("\(index + 1)\(index == layout.current ? "*" : " ") \(item.name)")
+    for (cell, _) in layout.grid.cells.enumerated() {
+        guard let item = layout.item(at: cell), let (row, col) = layout.grid.position(of: cell) else { continue }
+        print("\(cell + 1)\(cell == layout.current ? "*" : " ") r\(row + 1)c\(col + 1) \(item.name)")
     }
     exit(0)
 }

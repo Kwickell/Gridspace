@@ -29,19 +29,27 @@ struct SpaceItem {
 }
 
 struct SpaceLayout {
-    /// Every desktop and fullscreen app on the active display, in Gridspace's order.
+    /// Every desktop and fullscreen app on the active display, in Mission Control order.
     let items: [SpaceItem]
-    /// Index into `items` of the active Space.
+    /// Where each Space sits in Gridspace's grid.
+    let grid: CellGrid
+    /// Grid cell of the active Space.
     let current: Int?
-    /// Every Space on the active display in Mission Control order, which is the index ISS switches by.
+    /// Every Space on the display in Mission Control order, which is the index ISS switches by.
     let missionControlOrder: [UInt64]
     let activeID: UInt64
     let displayID: String
 
     var desktopCount: Int { items.filter { if case .desktop = $0.kind { true } else { false } }.count }
 
-    func grid(columns: Int) -> GridLayout {
-        GridLayout(columns: columns, items: items.count)
+    func item(at cell: Int) -> SpaceItem? {
+        guard grid.cells.indices.contains(cell), let key = grid.cells[cell] else { return nil }
+        return items.first { $0.key == key }
+    }
+
+    func missionControlIndex(of cell: Int) -> Int? {
+        guard let id = item(at: cell)?.id else { return nil }
+        return missionControlOrder.firstIndex(of: id)
     }
 }
 
@@ -49,8 +57,8 @@ enum Spaces {
     private static let desktopType = 0
     private static let fullscreenType = 4
 
-    /// Pass `order: []` for Mission Control order.
-    static func layout(order: [String]? = nil) -> SpaceLayout? {
+    /// Pass a grid to lay the Spaces out on it instead of the saved one.
+    static func layout(grid saved: CellGrid? = nil) -> SpaceLayout? {
         let connection = CGSMainConnectionID()
         let active = CGSGetActiveSpace(connection)
         guard let displays = CGSCopyManagedDisplaySpaces(connection) as? [[String: Any]] else { return nil }
@@ -77,10 +85,13 @@ enum Spaces {
                     return nil
                 }
             }
-            let items = ordered(found, key: \.key, saved: order ?? SpaceOrder.saved(for: displayID))
+            let keys = found.map(\.key)
+            let grid = (saved ?? GridStore.grid(for: displayID) ?? CellGrid.packed([], columns: GridStore.defaultColumns)).reconciled(with: keys)
+            let activeKey = found.first { $0.id == active }?.key
             return SpaceLayout(
-                items: items,
-                current: items.firstIndex { $0.id == active },
+                items: found,
+                grid: grid,
+                current: activeKey.flatMap(grid.index(of:)),
                 missionControlOrder: spaces.compactMap(spaceID),
                 activeID: active,
                 displayID: displayID
@@ -102,26 +113,30 @@ enum Spaces {
     }
 }
 
-/// Gridspace's own order of Spaces per display, by key. Spaces it hasn't seen go last.
-enum SpaceOrder {
-    private static let defaultsKey = "spaceOrderByDisplay"
+/// Gridspace's grid per display.
+enum GridStore {
+    static let defaultColumns = 3
+    private static let defaultsKey = "gridByDisplay"
 
-    private static var all: [String: [String]] {
-        get { UserDefaults.standard.dictionary(forKey: defaultsKey) as? [String: [String]] ?? [:] }
+    private static var all: [String: [String: Any]] {
+        get { UserDefaults.standard.dictionary(forKey: defaultsKey) as? [String: [String: Any]] ?? [:] }
         set { UserDefaults.standard.set(newValue, forKey: defaultsKey) }
     }
 
-    static func saved(for displayID: String) -> [String] {
-        all[displayID] ?? []
+    static func grid(for displayID: String) -> CellGrid? {
+        guard let saved = all[displayID],
+              let rows = saved["rows"] as? Int, let columns = saved["columns"] as? Int,
+              let cells = saved["cells"] as? [String]
+        else { return nil }
+        return CellGrid(rows: rows, columns: columns, cells: cells.map { $0.isEmpty ? nil : $0 })
     }
 
-    static func save(_ keys: [String], for displayID: String) {
-        all[displayID] = keys
+    static func save(_ grid: CellGrid, for displayID: String) {
+        all[displayID] = ["rows": grid.rows, "columns": grid.columns, "cells": grid.cells.map { $0 ?? "" }]
     }
 
-    /// Records the current order, so a new Space stays last wherever macOS put it and a closed one drops out.
+    /// Records the grid with new Spaces placed and closed ones removed, so later placements build on it.
     static func sync(_ layout: SpaceLayout) {
-        let keys = layout.items.map(\.key)
-        if keys != saved(for: layout.displayID) { save(keys, for: layout.displayID) }
+        if grid(for: layout.displayID) != layout.grid { save(layout.grid, for: layout.displayID) }
     }
 }

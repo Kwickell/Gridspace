@@ -3,57 +3,108 @@ public enum SwipeDirection: Equatable {
     case left, right, up, down
 }
 
-/// Items fill rows of a fixed width, left to right, top to bottom.
-public struct GridLayout: Equatable {
-    public let columns: Int
-    public let items: Int
+/// A fixed-size grid of cells, each holding a Space key or nothing. Spaces stay where they're put:
+/// a closed Space leaves a hole, and a new one fills the first hole after the last filled cell,
+/// then the earliest hole, and only grows the grid by a row when it's full.
+public struct CellGrid: Equatable {
+    public private(set) var rows: Int
+    public private(set) var columns: Int
+    /// Row-major, `rows * columns` long.
+    public private(set) var cells: [String?]
 
-    public init(columns: Int, items: Int) {
+    public init(rows: Int, columns: Int, cells: [String?] = []) {
+        self.rows = max(1, rows)
         self.columns = max(1, columns)
-        self.items = max(0, items)
+        let count = self.rows * self.columns
+        self.cells = Array(cells.prefix(count)) + Array(repeating: nil, count: max(0, count - cells.count))
     }
 
-    public var rows: Int { (items + columns - 1) / columns }
-
-    public func position(of item: Int) -> (row: Int, col: Int)? {
-        guard item >= 0, item < items else { return nil }
-        return (item / columns, item % columns)
+    /// Spaces in reading order, filling `columns` wide rows.
+    public static func packed(_ keys: [String], columns: Int) -> CellGrid {
+        let columns = max(1, columns)
+        return CellGrid(rows: max(1, (keys.count + columns - 1) / columns), columns: columns, cells: keys)
     }
 
-    public func item(row: Int, col: Int) -> Int? {
-        guard row >= 0, col >= 0, col < columns else { return nil }
-        let item = row * columns + col
-        return item < items ? item : nil
+    public var filledCount: Int { cells.compactMap { $0 }.count }
+
+    public func index(of key: String) -> Int? { cells.firstIndex(of: key) }
+
+    public func position(of index: Int) -> (row: Int, col: Int)? {
+        guard cells.indices.contains(index) else { return nil }
+        return (index / columns, index % columns)
     }
 
-    /// The item a swipe lands on, or nil at the edge of the grid.
-    /// Swipes are "natural", like the system's horizontal swipe: fingers moving left reveal the item to the right.
-    /// Moving down into the shorter last row lands on its last item.
-    public func target(from item: Int, swipe: SwipeDirection, invertVertical: Bool = false) -> Int? {
-        guard let (row, col) = position(of: item) else { return nil }
-        switch swipe {
-        case .left: return self.item(row: row, col: col + 1)
-        case .right: return self.item(row: row, col: col - 1)
-        case .up, .down:
-            let down = (swipe == .up) != invertVertical
-            let next = row + (down ? 1 : -1)
-            guard next >= 0, next < rows else { return nil }
-            return self.item(row: next, col: col) ?? min(items - 1, next * columns + columns - 1)
+    /// Drops keys that are gone and places new ones; `live` is in the order new Spaces should be placed.
+    public func reconciled(with live: [String]) -> CellGrid {
+        var grid = self
+        let alive = Set(live)
+        var seen = Set<String>()
+        for i in grid.cells.indices {
+            // A key that is gone, or a duplicate from a corrupted save, becomes a hole.
+            if let key = grid.cells[i], !alive.contains(key) || !seen.insert(key).inserted { grid.cells[i] = nil }
         }
+        for key in live where !seen.contains(key) {
+            grid.place(key)
+            seen.insert(key)
+        }
+        return grid
     }
-}
 
-/// Puts items in a saved order: known keys first in their saved order, then new ones in their original order.
-public func ordered<T>(_ items: [T], key: (T) -> String, saved: [String]) -> [T] {
-    let rank = Dictionary(saved.enumerated().map { ($1, $0) }, uniquingKeysWith: { first, _ in first })
-    return items.enumerated()
-        .sorted { a, b in
-            switch (rank[key(a.element)], rank[key(b.element)]) {
-            case let (x?, y?): return x < y
-            case (.some, nil): return true
-            case (nil, .some): return false
-            case (nil, nil): return a.offset < b.offset
+    private mutating func place(_ key: String) {
+        let lastFilled = cells.lastIndex { $0 != nil } ?? -1
+        if let slot = cells[(lastFilled + 1)...].firstIndex(where: { $0 == nil }) ?? cells.firstIndex(where: { $0 == nil }) {
+            cells[slot] = key
+            return
+        }
+        rows += 1
+        cells += Array(repeating: nil, count: columns)
+        cells[cells.count - columns] = key
+    }
+
+    /// Moves a cell's Space onto another cell, swapping with whatever is there.
+    public mutating func move(from: Int, to: Int) {
+        guard cells.indices.contains(from), cells.indices.contains(to) else { return }
+        cells.swapAt(from, to)
+    }
+
+    /// Keeps every Space at its row and column where it still fits; the rest fill the remaining holes.
+    /// Never shrinks below what's needed to hold every Space.
+    public func resized(rows newRows: Int, columns newColumns: Int) -> CellGrid {
+        let newColumns = max(1, newColumns)
+        let needed = (filledCount + newColumns - 1) / newColumns
+        var grid = CellGrid(rows: max(newRows, needed, 1), columns: newColumns)
+        var overflow: [String] = []
+        for (i, key) in cells.enumerated() {
+            guard let key else { continue }
+            let (row, col) = (i / columns, i % columns)
+            if row < grid.rows && col < grid.columns {
+                grid.cells[row * grid.columns + col] = key
+            } else {
+                overflow.append(key)
             }
         }
-        .map(\.element)
+        for key in overflow { grid.place(key) }
+        return grid
+    }
+
+    /// The filled cell a swipe lands on, skipping empty cells, or nil if nothing is filled that way.
+    /// Swipes are "natural", like the system's horizontal swipe: fingers moving left reveal the cell to the right.
+    public func target(from index: Int, swipe: SwipeDirection, invertVertical: Bool = false) -> Int? {
+        guard let (row, col) = position(of: index) else { return nil }
+        let (dr, dc): (Int, Int)
+        switch swipe {
+        case .left: (dr, dc) = (0, 1)
+        case .right: (dr, dc) = (0, -1)
+        case .up, .down:
+            let down = (swipe == .up) != invertVertical
+            (dr, dc) = (down ? 1 : -1, 0)
+        }
+        var r = row + dr, c = col + dc
+        while r >= 0, r < rows, c >= 0, c < columns {
+            if cells[r * columns + c] != nil { return r * columns + c }
+            r += dr
+            c += dc
+        }
+        return nil
+    }
 }
