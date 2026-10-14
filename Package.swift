@@ -17,5 +17,6 @@ let package = Package(
             dependencies: ["GridCore", "MultitouchBridge", "ISS"]
         ),
         .testTarget(name: "GridCoreTests", dependencies: ["GridCore"]),
+        .testTarget(name: "GestureRecognizerTests", dependencies: ["MultitouchBridge"]),
     ]
 )

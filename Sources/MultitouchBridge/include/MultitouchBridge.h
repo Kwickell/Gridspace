@@ -1,6 +1,8 @@
 #ifndef MULTITOUCH_BRIDGE_H
 #define MULTITOUCH_BRIDGE_H
 
+#include "GestureRecognizer.h"
+
 typedef enum {
     GSSwipeLeft = 0,
     GSSwipeRight = 1,

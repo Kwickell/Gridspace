@@ -1,4 +1,5 @@
 #include "MultitouchBridge.h"
+#include "GestureRecognizer.h"
 
 #include <CoreFoundation/CoreFoundation.h>
 #include <dlfcn.h>
@@ -35,7 +36,8 @@ typedef void (*MTUnregisterContactFrameCallbackFn)(MTDeviceRef, MTContactCallbac
 typedef void (*MTDeviceStartFn)(MTDeviceRef, int);
 typedef void (*MTDeviceStopFn)(MTDeviceRef);
 
-enum { MTTouchStateTouching = 4 };
+// Contact states from "making touch" through "breaking touch"; hovering and lingering fingers are ignored.
+enum { MTTouchStateMakeTouch = 3, MTTouchStateBreakTouch = 5 };
 
 static struct {
     int loaded;
@@ -49,10 +51,7 @@ static struct {
 static os_unfair_lock lock = OS_UNFAIR_LOCK_INIT;
 static GSSwipeCallback swipeCallback;
 static void *swipeContext;
-static int requiredFingers = 4;
-static float swipeThreshold = 0.12f;
-static int tracking, fired;
-static float startX, startY;
+static GSRecognizer recognizer = { .fingers = 4, .threshold = 0.1f };
 static CFArrayRef devices;
 
 static int load(void) {
@@ -70,41 +69,16 @@ static int load(void) {
     return ok;
 }
 
-// One swipe per touch: after firing, nothing fires again until every finger has lifted.
 static int contactFrame(MTDeviceRef device, const MTTouch *touches, int count, double timestamp, int frame) {
-    float x = 0, y = 0;
-    int touching = 0;
-    for (int i = 0; i < count; i++) {
-        if (touches[i].state != MTTouchStateTouching) continue;
-        x += touches[i].normalized.position.x;
-        y += touches[i].normalized.position.y;
-        touching++;
+    GSContact contacts[GS_MAX_CONTACTS];
+    int n = 0;
+    for (int i = 0; i < count && n < GS_MAX_CONTACTS; i++) {
+        if (touches[i].state < MTTouchStateMakeTouch || touches[i].state > MTTouchStateBreakTouch) continue;
+        contacts[n++] = (GSContact){ touches[i].identifier, touches[i].normalized.position.x, touches[i].normalized.position.y };
     }
 
-    int direction = -1;
     os_unfair_lock_lock(&lock);
-    if (touching == 0) {
-        tracking = 0;
-        fired = 0;
-    } else if (touching == requiredFingers) {
-        x /= touching;
-        y /= touching;
-        if (!tracking) {
-            tracking = 1;
-            fired = 0;
-            startX = x;
-            startY = y;
-        } else if (!fired) {
-            float dx = x - startX, dy = y - startY;
-            if (fabsf(dx) >= swipeThreshold || fabsf(dy) >= swipeThreshold) {
-                fired = 1;
-                if (fabsf(dx) > fabsf(dy)) direction = dx > 0 ? GSSwipeRight : GSSwipeLeft;
-                else direction = dy > 0 ? GSSwipeUp : GSSwipeDown;
-            }
-        }
-    } else if (!fired) {
-        tracking = 0;
-    }
+    int direction = GSRecognizerFeed(&recognizer, contacts, n, timestamp);
     GSSwipeCallback callback = swipeCallback;
     void *context = swipeContext;
     os_unfair_lock_unlock(&lock);
@@ -115,10 +89,7 @@ static int contactFrame(MTDeviceRef device, const MTTouch *touches, int count, d
 
 void GSMultitouchConfigure(int fingers, float threshold) {
     os_unfair_lock_lock(&lock);
-    requiredFingers = fingers;
-    swipeThreshold = threshold;
-    tracking = 0;
-    fired = 0;
+    GSRecognizerInit(&recognizer, fingers, threshold);
     os_unfair_lock_unlock(&lock);
 }
 

@@ -8,7 +8,7 @@ final class GestureMonitor {
 
     @discardableResult
     func start(fingers: Int) -> Int {
-        GSMultitouchConfigure(Int32(fingers), 0.12)
+        GSMultitouchConfigure(Int32(fingers), 0.1)
         let context = Unmanaged.passUnretained(self).toOpaque()
         deviceCount = Int(GSMultitouchStart({ direction, context in
             guard let context else { return }
