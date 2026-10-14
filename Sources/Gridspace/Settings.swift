@@ -23,7 +23,7 @@ final class Settings {
         NotificationCenter.default.post(name: .gridspaceSettingsChanged, object: nil)
     }
 
-    /// The Arrange Spaces shortcut as a Carbon key code and modifier mask; a zero key code means none.
+    /// The Arrange Spaces shortcut as a Carbon key code and modifier mask; no modifiers means no shortcut.
     var arrangeShortcut: (keyCode: UInt32, modifiers: UInt32) {
         get { (UInt32(defaults.integer(forKey: "arrangeKeyCode")), UInt32(defaults.integer(forKey: "arrangeModifiers"))) }
         set {

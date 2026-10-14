@@ -4,7 +4,7 @@ import AppKit
 func render(size: CGFloat) -> NSImage {
     NSImage(size: NSSize(width: size, height: size), flipped: false) { _ in
         let s = size / 1024
-        // Apple's macOS icon grid: an 824pt body centred on a 1024pt canvas.
+        // Apple's macOS icon template puts an 824pt body in the middle of a 1024pt canvas.
         let body = NSRect(x: 100 * s, y: 100 * s, width: 824 * s, height: 824 * s)
         let shape = NSBezierPath(roundedRect: body, xRadius: 185 * s, yRadius: 185 * s)
 

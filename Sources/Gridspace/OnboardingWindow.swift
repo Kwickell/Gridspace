@@ -21,7 +21,12 @@ final class OnboardingModel: ObservableObject {
         timer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in self?.refresh() }
     }
 
-    deinit { timer?.invalidate() }
+    deinit { stop() }
+
+    func stop() {
+        timer?.invalidate()
+        timer = nil
+    }
 
     func refresh() {
         accessibility = AXIsProcessTrusted()
@@ -84,7 +89,7 @@ struct OnboardingView: View {
 
     private var shortcut: String {
         let current = model.settings.arrangeShortcut
-        return Shortcut.display(keyCode: current.keyCode, modifiers: current.modifiers)
+        return current.modifiers == 0 ? "the menu" : Shortcut.display(keyCode: current.keyCode, modifiers: current.modifiers)
     }
 
     private func step<Action: View>(_ number: Int, _ title: String, _ detail: String, done: Bool, @ViewBuilder action: () -> Action) -> some View {

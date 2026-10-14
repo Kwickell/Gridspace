@@ -31,7 +31,7 @@ final class SettingsModel: ObservableObject {
         gridspaceOwnsSwipes = SystemGestures.conflicts(fingers: settings.fingers).isEmpty
         launchAtLogin = SMAppService.mainApp.status == .enabled
         let current = settings.arrangeShortcut
-        shortcut = Shortcut.display(keyCode: current.keyCode, modifiers: current.modifiers)
+        shortcut = current.modifiers == 0 ? "None" : Shortcut.display(keyCode: current.keyCode, modifiers: current.modifiers)
     }
 
     func setGridspaceOwnsSwipes(_ on: Bool) {

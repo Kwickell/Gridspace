@@ -48,7 +48,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private func registerHotkey() {
         arrangeHotkey = nil
         let shortcut = settings.arrangeShortcut
-        guard shortcut.keyCode != 0 else { return }
+        guard shortcut.modifiers != 0 else { return }
         arrangeHotkey = Hotkey(keyCode: shortcut.keyCode, modifiers: shortcut.modifiers) { [weak self] in self?.showArrange() }
     }
 
@@ -151,7 +151,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 openDoctor: { [weak self] in self?.showDoctor() }
             )
             settingsModel = model
-            settingsWindow = HostedWindow(title: "Gridspace Settings") { SettingsView(model: model) }
+            settingsWindow = HostedWindow(title: "Gridspace Settings", onClose: { model.stopRecording() }) { SettingsView(model: model) }
         }
         settingsModel?.refresh()
         settingsWindow?.present()
@@ -165,10 +165,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 finish: { [weak self] in
                     self?.settings.onboarded = true
                     self?.onboarding?.close()
-                    self?.onboarding = nil
                 }
             )
-            onboarding = HostedWindow(title: "Welcome to Gridspace") { OnboardingView(model: model) }
+            onboarding = HostedWindow(title: "Welcome to Gridspace", onClose: { [weak self] in
+                model.stop()
+                self?.onboarding = nil
+            }) { OnboardingView(model: model) }
         }
         onboarding?.present()
     }
@@ -208,7 +210,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
         let arrangeItem = ActionItem("Arrange Spaces…") { [weak self] in self?.showArrange() }
         let shortcut = settings.arrangeShortcut
-        if let key = Self.menuKeyEquivalent(shortcut.keyCode) {
+        if shortcut.modifiers != 0, let key = Self.menuKeyEquivalent(shortcut.keyCode) {
             arrangeItem.keyEquivalent = key
             arrangeItem.keyEquivalentModifierMask = Self.menuModifiers(shortcut.modifiers)
         }
@@ -233,7 +235,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     private static func menuKeyEquivalent(_ keyCode: UInt32) -> String? {
-        guard keyCode != 0 else { return nil }
         let name = Shortcut.display(keyCode: keyCode, modifiers: 0)
         return name.count == 1 ? name.lowercased() : nil
     }

@@ -13,7 +13,7 @@ enum Shortcut {
     }
 
     static func display(keyCode: UInt32, modifiers: UInt32) -> String {
-        guard keyCode != 0 || modifiers != 0 else { return "None" }
+        guard modifiers != 0 else { return keyName(keyCode) }
         var text = ""
         if modifiers & UInt32(controlKey) != 0 { text += "⌃" }
         if modifiers & UInt32(optionKey) != 0 { text += "⌥" }
