@@ -21,8 +21,31 @@ enum Displays {
         NSScreen.screens.first { Self.identifier(of: $0) == identifier }
     }
 
+    /// A key per display from vendor, model and serial, which identify the panel rather than the
+    /// connection it arrived on.
+    static func panelKeys() -> [String: String] {
+        var keys: [String: String] = [:]
+        for display in active {
+            guard let identifier = identifier(of: display) else { continue }
+            // A serial of 0 is not an identity. Two panels of the same model would key to the same grid
+            // and reconcile each other's cells away, so an unidentified panel gets no key at all.
+            let serial = CGDisplaySerialNumber(display)
+            guard serial != 0 else { continue }
+            keys[identifier] = "\(CGDisplayVendorNumber(display))-\(CGDisplayModelNumber(display))-\(serial)"
+        }
+        return keys
+    }
+
     static func name(for identifier: String) -> String {
         screen(for: identifier)?.localizedName ?? "a disconnected display"
+    }
+
+    private static var active: [CGDirectDisplayID] {
+        var count = UInt32()
+        guard CGGetActiveDisplayList(0, nil, &count) == .success, count > 0 else { return [] }
+        var displays = [CGDirectDisplayID](repeating: 0, count: Int(count))
+        guard CGGetActiveDisplayList(count, &displays, &count) == .success else { return [] }
+        return Array(displays.prefix(Int(count)))
     }
 
     private static func identifier(of screen: NSScreen) -> String? {

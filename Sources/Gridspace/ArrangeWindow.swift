@@ -72,7 +72,7 @@ final class ArrangeModel: ObservableObject {
         guard let layout = Spaces.layout(for: displayID, grid: grid) else { reload(); return }
         var updated = layout.grid
         change(&updated)
-        GridStore.save(updated, for: displayID)
+        GridStore.save(updated, for: layout.storageKey)
         reload()
         onChange()
     }
