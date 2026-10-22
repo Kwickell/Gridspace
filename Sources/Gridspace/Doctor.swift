@@ -106,10 +106,22 @@ enum Doctor {
 
     private static func displays() -> CheckResult {
         let separate = !(SystemPrefs.value("spans-displays", in: "com.apple.spaces") as? Bool ?? false)
-        if NSScreen.screens.count > 1 && separate {
-            return CheckResult(id: "displays", title: "Displays", status: .warning, detail: "Several displays with separate Spaces. The grid follows whichever display is active, and this setup is untested.")
+        let count = NSScreen.screens.count
+        if count > 1 && separate {
+            let single = Spaces.layouts().filter { $0.items.count < 2 }.map { Displays.name(for: $0.displayID) }
+            let detail = "\(count) displays, each with its own Spaces and its own grid. A swipe moves the display the pointer is on."
+            if single.isEmpty {
+                return CheckResult(id: "displays", title: "Displays", status: .ok, detail: detail)
+            }
+            return CheckResult(
+                id: "displays", title: "Displays", status: .warning,
+                detail: "\(detail) Nothing to swipe between on \(single.joined(separator: " and ")): add a Space there in Mission Control.",
+                fixes: [Fix(title: "Open Mission Control") {
+                    NSWorkspace.shared.open(URL(fileURLWithPath: "/System/Applications/Mission Control.app"))
+                }]
+            )
         }
-        return CheckResult(id: "displays", title: "Displays", status: .ok, detail: NSScreen.screens.count > 1 ? "Displays share one set of Spaces." : "One display.")
+        return CheckResult(id: "displays", title: "Displays", status: .ok, detail: count > 1 ? "Displays share one set of Spaces." : "One display.")
     }
 }
 

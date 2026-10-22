@@ -19,8 +19,9 @@ final class GridOverlay {
         panel.contentView = view
     }
 
-    func show(_ layout: SpaceLayout) {
-        guard let current = layout.current else { return }
+    /// `cell` overrides the layout's own current cell, which still reads as the old Space right after a jump.
+    func show(_ layout: SpaceLayout, cell: Int? = nil) {
+        guard let current = cell ?? layout.current else { return }
         view.grid = layout.grid
         view.current = current
         view.items = layout.grid.cells.indices.map { cell in
@@ -29,7 +30,7 @@ final class GridOverlay {
             return item.icon.map(GridView.Cell.icon) ?? .label(String(item.name.prefix(1)))
         }
         let size = view.preferredSize
-        let screen = NSScreen.main?.frame ?? .zero
+        let screen = (Displays.screen(for: layout.displayID) ?? NSScreen.main)?.frame ?? .zero
         panel.setFrame(NSRect(x: screen.midX - size.width / 2, y: screen.midY - size.height / 2, width: size.width, height: size.height), display: true)
         view.needsDisplay = true
 

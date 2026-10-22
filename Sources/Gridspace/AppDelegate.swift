@@ -16,6 +16,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var settingsWindow: HostedWindow<SettingsView>?
     private var settingsModel: SettingsModel?
     private var onboarding: HostedWindow<OnboardingView>?
+    private var iconState: (displayID: String, grid: CellGrid, current: Int?)?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
@@ -31,12 +32,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         workspace.addObserver(self, selector: #selector(spaceChanged), name: NSWorkspace.activeSpaceDidChangeNotification, object: nil)
         // MultitouchSupport stops delivering frames after sleep.
         workspace.addObserver(self, selector: #selector(restartGestures), name: NSWorkspace.didWakeNotification, object: nil)
+        NotificationCenter.default.addObserver(self, selector: #selector(screensChanged), name: NSApplication.didChangeScreenParametersNotification, object: nil)
 
         registerHotkey()
         NotificationCenter.default.addObserver(self, selector: #selector(settingsChanged), name: .gridspaceSettingsChanged, object: nil)
         syncOrder()
-        // Spaces can open or close without the active Space changing, e.g. closing one from Mission Control.
-        Timer.scheduledTimer(withTimeInterval: 2, repeats: true) { [weak self] _ in self?.syncOrder() }
+        // Spaces can open or close without the active Space changing, e.g. closing one from Mission
+        // Control, and a trackpad can be connected at any time.
+        Timer.scheduledTimer(withTimeInterval: 2, repeats: true) { [weak self] _ in
+            guard let self else { return }
+            self.gestures.restartIfDevicesChanged(fingers: self.settings.fingers)
+            self.syncOrder()
+            self.updateIcon()
+        }
         updateIcon()
         if !settings.onboarded {
             showOnboarding()
@@ -66,36 +74,46 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private func handle(_ swipe: SwipeDirection) {
         // While macOS owns these swipes too, acting on them would switch Spaces twice.
         guard SystemGestures.conflicts(fingers: settings.fingers).isEmpty else {
-            log.info("swipe \(String(describing: swipe)) ignored: macOS owns these swipes")
+            log.info("swipe \(String(describing: swipe), privacy: .public) ignored: macOS owns these swipes")
             return
         }
         guard let layout = Spaces.layout(), let current = Navigator.current(in: layout) else {
-            log.info("swipe \(String(describing: swipe)) ignored: current Space not in the grid")
+            log.info("swipe \(String(describing: swipe), privacy: .public) ignored: current Space not in the grid")
             return
         }
         guard let target = layout.grid.target(from: current, swipe: swipe, invertVertical: settings.invertVertical) else {
-            log.info("swipe \(String(describing: swipe)) from cell \(current): edge of the grid")
-            if settings.showOverlay { overlay.show(layout) }
+            log.info("swipe \(String(describing: swipe), privacy: .public) from cell \(current): edge of the grid")
+            if settings.showOverlay { overlay.show(layout, cell: current) }
             return
         }
         let switched = Navigator.go(to: target, in: layout)
-        log.info("swipe \(String(describing: swipe)) from cell \(current) to \(target): \(switched ? "switched" : "refused")")
-        if !switched { NSSound.beep() }
+        log.info("swipe \(String(describing: swipe), privacy: .public) from cell \(current) to \(target) on \(Displays.name(for: layout.displayID), privacy: .public): \(switched ? "switched" : "refused", privacy: .public)")
+        guard switched else { NSSound.beep(); return }
+        if settings.showOverlay { overlay.show(layout, cell: target) }
     }
 
     private func syncOrder() {
-        guard let layout = Spaces.layout() else { return }
-        GridStore.sync(layout)
+        for layout in Spaces.layouts() { GridStore.sync(layout) }
         arrange?.refresh()
     }
 
     @objc private func spaceChanged() {
+        let ours = Navigator.justJumped
         Navigator.spaceChanged()
-        guard let layout = Spaces.layout() else { return }
-        GridStore.sync(layout)
-        arrange?.refresh()
+        syncOrder()
         updateIcon()
-        if settings.showOverlay { overlay.show(layout) }
+        // A jump of ours already showed the overlay for the display it moved.
+        if settings.showOverlay, !ours, let layout = Spaces.activeLayout() { overlay.show(layout) }
+    }
+
+    @objc private func screensChanged() {
+        // Plugging a display in or out moves Spaces between displays, and macOS takes a moment to settle.
+        syncOrder()
+        updateIcon()
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2) { [weak self] in
+            self?.syncOrder()
+            self?.updateIcon()
+        }
     }
 
     @objc private func restartGestures() {
@@ -109,6 +127,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     private func updateIcon() {
         guard let layout = Spaces.layout() else { return }
+        let state = (layout.displayID, layout.grid, layout.current)
+        if let iconState, iconState == state { return }
+        iconState = state
         statusItem.button?.image = Self.icon(grid: layout.grid, current: layout.current)
     }
 
@@ -202,7 +223,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         let layout = Spaces.layout()
 
         if let layout, let current = layout.current, let item = layout.item(at: current), let (row, col) = layout.grid.position(of: current) {
-            menu.addItem(.info("\(item.name): row \(row + 1), column \(col + 1)"))
+            let place = NSScreen.screens.count > 1 ? " on \(Displays.name(for: layout.displayID))" : ""
+            menu.addItem(.info("\(item.name): row \(row + 1), column \(col + 1)\(place)"))
         } else {
             menu.addItem(.info("Current Space is unknown"))
         }
