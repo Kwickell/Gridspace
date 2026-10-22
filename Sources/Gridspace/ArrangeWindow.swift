@@ -15,7 +15,7 @@ final class ArrangeModel: ObservableObject {
     @Published private(set) var tiles: [String: Tile] = [:]
     /// Key of the Space being dragged; a key rather than a cell so a resize mid-drag can't retarget it.
     @Published var dragging: String?
-    private var displayID = ""
+    private(set) var displayID = ""
     private var missionControlKeys: [String] = []
     private let onChange: () -> Void
 
@@ -24,9 +24,16 @@ final class ArrangeModel: ObservableObject {
         reload()
     }
 
+    /// Picks the display again, which `reload` then holds on to for as long as the window stays open.
+    func open() {
+        displayID = ""
+        reload()
+    }
+
     func reload() {
         dragging = nil
-        guard let layout = Spaces.layout() else { return }
+        // Holding the display keeps the pointer moving to another screen from swapping the grid mid-edit.
+        guard let layout = Spaces.layout(for: displayID) ?? Spaces.activeLayout() else { return }
         displayID = layout.displayID
         missionControlKeys = layout.items.map(\.key)
         grid = layout.grid
@@ -62,7 +69,7 @@ final class ArrangeModel: ObservableObject {
     /// Applies an edit to the shown grid brought up to date with the live Spaces, so Spaces that opened
     /// or closed while the window was open aren't lost or resurrected by the save.
     private func edit(_ change: (inout CellGrid) -> Void) {
-        guard let layout = Spaces.layout(grid: grid), layout.displayID == displayID else { reload(); return }
+        guard let layout = Spaces.layout(for: displayID, grid: grid) else { reload(); return }
         var updated = layout.grid
         change(&updated)
         GridStore.save(updated, for: displayID)
@@ -179,14 +186,22 @@ final class ArrangeWindowController: NSWindowController, NSWindowDelegate {
     required init?(coder: NSCoder) { fatalError() }
 
     func present() {
-        model.reload()
+        model.open()
+        updateTitle()
         window?.center()
         showWindow(nil)
         NSApp.activate(ignoringOtherApps: true)
     }
 
     func refresh() {
-        if window?.isVisible == true { model.refresh() }
+        guard window?.isVisible == true else { return }
+        model.refresh()
+        // The shown display changes under us when the pinned one is unplugged.
+        updateTitle()
+    }
+
+    private func updateTitle() {
+        window?.title = NSScreen.screens.count > 1 ? "Arrange Spaces on \(Displays.name(for: model.displayID))" : "Arrange Spaces"
     }
 
     func windowDidResignKey(_ notification: Notification) {

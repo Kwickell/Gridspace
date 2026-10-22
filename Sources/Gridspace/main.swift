@@ -20,6 +20,19 @@ if arguments.contains("--overlay") {
     RunLoop.main.run(until: Date().addingTimeInterval(1.2))
     exit(0)
 }
+if arguments.contains("--displays") {
+    let target = Spaces.targetDisplayID()
+    for layout in Spaces.layouts() {
+        let mark = layout.displayID == target ? "*" : " "
+        let cells = layout.grid.cells.indices.map { cell -> String in
+            guard let item = layout.item(at: cell) else { return "." }
+            return cell == layout.current ? "[\(item.name)]" : item.name
+        }
+        print("\(mark) \(Displays.name(for: layout.displayID))  \(layout.grid.rows)x\(layout.grid.columns)  \(cells.joined(separator: " "))")
+    }
+    print("* is the display a swipe acts on, [] its current Space")
+    exit(0)
+}
 if arguments.contains("--list") {
     guard let layout = Spaces.layout() else { exit(1) }
     for (cell, _) in layout.grid.cells.enumerated() {
