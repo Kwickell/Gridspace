@@ -35,8 +35,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         registerHotkey()
         NotificationCenter.default.addObserver(self, selector: #selector(settingsChanged), name: .gridspaceSettingsChanged, object: nil)
         syncOrder()
-        // Spaces can open or close without the active Space changing, e.g. closing one from Mission Control.
-        Timer.scheduledTimer(withTimeInterval: 2, repeats: true) { [weak self] _ in self?.syncOrder() }
+        // Spaces can open or close without the active Space changing, e.g. closing one from Mission
+        // Control, and a trackpad can be connected at any time.
+        Timer.scheduledTimer(withTimeInterval: 2, repeats: true) { [weak self] _ in
+            guard let self else { return }
+            self.gestures.restartIfDevicesChanged(fingers: self.settings.fingers)
+            self.syncOrder()
+        }
         updateIcon()
         if !settings.onboarded {
             showOnboarding()
