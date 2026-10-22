@@ -173,14 +173,17 @@ final class ArrangeWindowController: NSWindowController, NSWindowDelegate {
 
     init(onChange: @escaping () -> Void) {
         model = ArrangeModel(onChange: onChange)
-        let window = NSWindow(contentViewController: NSHostingController(rootView: ArrangeView(model: model)))
-        window.title = "Arrange Spaces"
-        window.styleMask = [.titled, .closable]
+        let panel = NSPanel(contentViewController: NSHostingController(rootView: ArrangeView(model: model)))
+        panel.title = "Arrange Spaces"
+        panel.styleMask = [.titled, .closable, .utilityWindow]
+        panel.isFloatingPanel = true
+        // Closing on resign is this window's job, so don't let AppKit hide it behind our back.
+        panel.hidesOnDeactivate = false
         // Opening on top of a fullscreen app keeps you on that Space instead of jumping to a desktop.
-        window.collectionBehavior = [.moveToActiveSpace, .fullScreenAuxiliary]
-        window.level = .floating
-        super.init(window: window)
-        window.delegate = self
+        panel.collectionBehavior = [.moveToActiveSpace, .fullScreenAuxiliary]
+        panel.level = .floating
+        super.init(window: panel)
+        panel.delegate = self
     }
 
     required init?(coder: NSCoder) { fatalError() }
@@ -189,8 +192,9 @@ final class ArrangeWindowController: NSWindowController, NSWindowDelegate {
         model.open()
         updateTitle()
         window?.center()
-        showWindow(nil)
+        // Activating first so the panel is reliably key, since it closes when it stops being key.
         NSApp.activate(ignoringOtherApps: true)
+        showWindow(nil)
     }
 
     func refresh() {
@@ -206,5 +210,6 @@ final class ArrangeWindowController: NSWindowController, NSWindowDelegate {
 
     func windowDidResignKey(_ notification: Notification) {
         model.dragging = nil
+        window?.close()
     }
 }
