@@ -71,20 +71,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private func handle(_ swipe: SwipeDirection) {
         // While macOS owns these swipes too, acting on them would switch Spaces twice.
         guard SystemGestures.conflicts(fingers: settings.fingers).isEmpty else {
-            log.info("swipe \(String(describing: swipe)) ignored: macOS owns these swipes")
+            log.info("swipe \(String(describing: swipe), privacy: .public) ignored: macOS owns these swipes")
             return
         }
         guard let layout = Spaces.layout(), let current = Navigator.current(in: layout) else {
-            log.info("swipe \(String(describing: swipe)) ignored: current Space not in the grid")
+            log.info("swipe \(String(describing: swipe), privacy: .public) ignored: current Space not in the grid")
             return
         }
         guard let target = layout.grid.target(from: current, swipe: swipe, invertVertical: settings.invertVertical) else {
-            log.info("swipe \(String(describing: swipe)) from cell \(current): edge of the grid")
+            log.info("swipe \(String(describing: swipe), privacy: .public) from cell \(current): edge of the grid")
             if settings.showOverlay { overlay.show(layout) }
             return
         }
         let switched = Navigator.go(to: target, in: layout)
-        log.info("swipe \(String(describing: swipe)) from cell \(current) to \(target): \(switched ? "switched" : "refused")")
+        log.info("swipe \(String(describing: swipe), privacy: .public) from cell \(current) to \(target): \(switched ? "switched" : "refused", privacy: .public)")
         if !switched { NSSound.beep() }
     }
 
