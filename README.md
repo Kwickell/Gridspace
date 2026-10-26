@@ -34,3 +34,7 @@ Swipes are natural: fingers left go to the Space on the right, fingers up go to 
 
 - Trackpad input comes from the private MultitouchSupport framework, the Space list from private SkyLight calls, and switching from undocumented Dock swipe events. Any of them can break in a macOS update.
 - Several displays with separate Spaces is untested.
+
+## Licence
+
+MIT, see `LICENSE`. The vendored InstantSpaceSwitcher code in `Sources/ISS` keeps its own MIT licence, in `Sources/ISS/LICENSE`.
